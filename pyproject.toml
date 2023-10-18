@@ -6,7 +6,8 @@ authors = ["tmtenbrink <T.M.tenBrink@student.tudelft.nl>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "3.9"
+python = ">=3.9, <3.10"
+numpy = "^1.26.1"
 
 
 [build-system]
