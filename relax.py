@@ -113,7 +113,7 @@ def cut_in(vertex_i: int, n: int):
 
 def extended_formulation(n: int, graph: np.ndarray):
     model = gp.Model()
-    # model.setParam('LogToConsole', 0)
+    model.setParam('LogToConsole', 0)
     m_edges = (n * (n - 1)) // 2
 
     lengths = np.zeros(m_edges, dtype=int)
@@ -128,7 +128,7 @@ def extended_formulation(n: int, graph: np.ndarray):
 
     # for i<j (i, j) is the (n-1 + n-2 + ... + n - i) + (j - i -1)th element
     # i.e. index is i(2n-i-1)/2 + (j-i-1)
-    char_vec: gp.MVar = model.addMVar(shape=(m_edges,), vtype=gp.GRB.BINARY)
+    char_vec: gp.MVar = model.addMVar(shape=(m_edges,), vtype=gp.GRB.BINARY, lb=0, name='char')
     num_vert_non_r = n - 1
     num_arcs = 2 * m_edges
     # rows are vertices without r
@@ -190,14 +190,25 @@ def run():
 
     model, char_vec = extended_formulation(n, graph)
 
+    model.update()
+    relax_model: gp.Model = model.copy().relax()
+
+    relax_model.optimize()
+
+    print(f"extended relaxation: {relax_model.ObjVal}")
+
     model.optimize()
-    print(f"objective value: {model.ObjVal}")
+
+    print(f"integer optimal: {int(model.ObjVal)}")
 
     edge_names = get_edge_names(n)
 
     for i, x in enumerate(char_vec.tolist()):
         if np.abs(x.X - 1) < 0.01:
             print(edge_names[i])
+
+    # for i, x in enumerate(relax_model.getVars()):
+    #     print(x)
 
     # we fix r is the first vertex
 
