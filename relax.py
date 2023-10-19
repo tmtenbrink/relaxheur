@@ -30,6 +30,18 @@ def parse_instance(inst_path: Path):
     return n, graph
 
 
+def get_edge_names(n: int):
+    names = {}
+    index = 0
+    for i in range(n):
+        for j in range(i+1, n):
+            names[index] = f"({i}, {j})"
+
+            index += 1
+
+    return names
+
+
 def edge_idx(lower_i, higher_j, n: int):
     """lower_i and higher_j must be of same dimension or one of them must be a scalar."""
     return lower_i * (2 * n - lower_i - 1) // 2 + (higher_j - lower_i - 1)
@@ -101,6 +113,7 @@ def cut_in(vertex_i: int, n: int):
 
 def extended_formulation(n: int, graph: np.ndarray):
     model = gp.Model()
+    # model.setParam('LogToConsole', 0)
     m_edges = (n * (n - 1)) // 2
 
     lengths = np.zeros(m_edges, dtype=int)
@@ -142,7 +155,7 @@ def extended_formulation(n: int, graph: np.ndarray):
         f_s: gp.MVar = flow[s-1]
         fs_r_out: gp.MVar = f_s[cut_out_r]
         fs_r_in: gp.MVar = f_s[cut_in_r]
-        model.addConstr(fs_r_out.sum() - fs_r_in.sum() == 0, name=f"f_{s}(delta_out(r))-f_{s}(delta_in(r))==0")
+        model.addConstr(fs_r_out.sum() - fs_r_in.sum() >= 2, name=f"f_{s}(delta_out(r))-f_{s}(delta_in(r))>=2")
 
         for other_v in range(0, n):
             # skip r and s
@@ -163,24 +176,28 @@ def extended_formulation(n: int, graph: np.ndarray):
             f_s_arc_1: gp.MVar = f_s[m * 2]
             f_s_arc_2: gp.MVar = f_s[m * 2 + 1]
 
-            model.addConstr(x_edge - f_s_arc_1 <= 0, f"f_{s}(arc {m * 2})<=x({m})")
-            model.addConstr(x_edge - f_s_arc_2 <= 0, f"f_{s}(arc {m * 2 + 1})<=x({m})")
+            model.addConstr(f_s_arc_1 - x_edge <= 0, f"f_{s}(arc {m * 2})<=x({m})")
+            model.addConstr( f_s_arc_2 - x_edge <= 0, f"f_{s}(arc {m * 2 + 1})<=x({m})")
 
     return model, char_vec
 
 
 def run():
     # inst_path = get_inst_path()
-    path = Path('tsp/simple.dat')
+    inst_path = Path('tsp/burma14.dat')
 
-    n, graph = parse_instance(path)
+    n, graph = parse_instance(inst_path)
 
     model, char_vec = extended_formulation(n, graph)
 
     model.optimize()
+    print(f"objective value: {model.ObjVal}")
 
-    for x in char_vec.tolist():
-        print(x.X)
+    edge_names = get_edge_names(n)
+
+    for i, x in enumerate(char_vec.tolist()):
+        if np.abs(x.X - 1) < 0.01:
+            print(edge_names[i])
 
     # we fix r is the first vertex
 
