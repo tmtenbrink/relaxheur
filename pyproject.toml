@@ -8,6 +8,8 @@ readme = "README.md"
 [tool.poetry.dependencies]
 python = ">=3.9, <3.10"
 numpy = "^1.26.1"
+gurobipy = "^10.0.3"
+scipy = "^1.11.3"
 
 
 [build-system]
