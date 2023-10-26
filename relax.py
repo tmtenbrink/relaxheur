@@ -1,12 +1,12 @@
 import argparse
-import random
 from pathlib import Path
 from typing import Optional
+from enum import Enum, auto
+from uuid import uuid4
 
 import numpy as np
 import gurobipy as gp
-from enum import Enum, auto
-from uuid import uuid4
+import networkx as nx
 
 
 def parse_line(ln: str):
@@ -307,51 +307,24 @@ class TSPModel:
 
         return char_vec, x_values
 
+def compute_min_cut(x_values: np.ndarray, n: int, base_graph: nx.Graph, edge_tuples_arr: np.ndarray) -> tuple[int, np.ndarray]:
+    """Compute min cut using Stoer–Wagner algorithm using Networkx. x_values should be 1D array with our edge
+    index convention. edge_tuples_arr should be of the same length, but here each element is a 3-element array
+    (so an m*3 array) that is (i, j, w) with i the lower vertex index, j the higher and w to be used for weight."""
+    # We make a copy so we do not modify the base graph
+    weighted_graph = base_graph.copy()
+    # We copy the array with weights zero
+    edge_tuples_arr = edge_tuples_arr.copy()
+    edge_tuples_arr[:, 2] = x_values
+    weighted_graph.add_weighted_edges_from(edge_tuples_arr)
 
-def compute_cut_weight(cut: np.ndarray, x_values: np.ndarray):
-    # TODO return the weight = x(delta(cut))
-    return 0
+    cut_value, partition = nx.stoer_wagner(weighted_graph)
+    cut_edges = partition_to_edge_idx(n, partition)
 
-
-EDGE_14 = get_edge_names(14)
-
-
-def check_if_subtour(x_values: np.ndarray, n: int):
-    """Check if graph, given the char. vector, is connected.
-    Start at a random node, then find all nodes that are connected to it.
-    Output: #nodes in U and partition U, which are the visited nodes from the initial node.
-
-    Complexity: O(|V|+|E|)"""
-    nodes = np.arange(n)
-    visited = set()
-    visited_edges = set()
-    outgoing_edges = set()
-    valid_edges = np.where(x_values == 1)[0]
-    edge_names = ''
-    for ve in valid_edges:
-        edge_names += ' ' + EDGE_14[ve]
-    random_edge_idx = random.randint(0, valid_edges.size - 1)
-    stack = [random.randint(0, n - 1)]  # [0]  # Start from vertex 0 -> random
-
-    while stack:
-        node = stack.pop()
-        visited.add(node)
-        cut_idx = get_cut_idx(node, n)
-        outgoing_edges.update(set(cut_idx))
-        neighbors = np.delete(nodes, node)
-        for i in range(len(cut_idx)):
-            edge = cut_idx[i]
-            edge_in_x = x_values[edge]
-            if edge_in_x > 0 and neighbors[i] not in visited:
-                stack.append(neighbors[i])
-                visited_edges.add(edge)
-
-    cut_set = list(outgoing_edges.difference(visited_edges))
-    # If number of visited eges is not equal to n, we have a subtour
-    return len(visited) != n, cut_set
+    return cut_value, cut_edges
 
 
-def separation(n: int, char_vec: gp.MVar, x_values: np.ndarray, model: gp.Model) -> bool:
+def separation(n: int, char_vec: gp.MVar, x_values: np.ndarray, model: gp.Model, base_graph: nx.Graph, edge_tuples_arr: np.ndarray) -> bool:
     """Tests whether x is in P_subtour, if not it adds the inequality to the model"""
     # based on bounds we put in model we assume x >= 0
     epsilon = 0.0001
@@ -369,10 +342,10 @@ def separation(n: int, char_vec: gp.MVar, x_values: np.ndarray, model: gp.Model)
             model.addConstr(edge_vars.sum() == 2, name=f"x(delta({v}))==2")
             return False
 
-    is_subtour, subtour_edges = check_if_subtour(x_values, n)
+    cut_weight, min_cut_edges = compute_min_cut(x_values, n, base_graph, edge_tuples_arr)
 
-    if is_subtour:
-        subtour_vars = char_vec[subtour_edges]
+    if cut_weight < 2:
+        subtour_vars = char_vec[min_cut_edges]
         model.addConstr(subtour_vars.sum() >= 2, name=f"x(delta(cut_{uuid4()}))>=2")
         return False
 
@@ -383,6 +356,10 @@ def optimize_cut_model(m: TSPModel):
     max_i = 100000
     i = 0
     invalid = True
+
+    edge_tpls_arr = get_edge_tpls_arr(m.n)
+    base_graph = nx.complete_graph(m.n)
+
     while invalid:
         if i > max_i:
             raise ValueError("Model could not be solved in time!")
@@ -390,7 +367,7 @@ def optimize_cut_model(m: TSPModel):
         m.model.optimize()
         char_vec, x_values = m.char_vec_values()
         # this modifies the underlying model and adds constraints
-        in_subtour = separation(m.n, char_vec, x_values, m.model)
+        in_subtour = separation(m.n, char_vec, x_values, m.model, base_graph, edge_tpls_arr)
 
         invalid = not in_subtour
         i += 1
