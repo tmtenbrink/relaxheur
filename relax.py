@@ -1,4 +1,5 @@
 import argparse
+import random
 from pathlib import Path
 from typing import Optional
 
@@ -6,6 +7,7 @@ import numpy as np
 import gurobipy as gp
 from enum import Enum, auto
 from uuid import uuid4
+
 
 def parse_line(ln: str):
     return list(map(lambda i: int(i), ln.rstrip().split(' ')))
@@ -60,6 +62,12 @@ def get_edge_names(n: int):
 def edge_idx(lower_i, higher_j, n: int):
     """lower_i and higher_j must be of same dimension or one of them must be a scalar."""
     return lower_i * (2 * n - lower_i - 1) // 2 + (higher_j - lower_i - 1)
+
+
+def vertex_from_edge(edge: int):
+    # i, j
+    # I = i * (2*n - i - 1) / 2 + (j - i - 1)
+    return
 
 
 def get_lt_and_gt_cut(vertex_i: int, n: int):
@@ -126,6 +134,38 @@ def cut_in(vertex_i: int, n: int):
     return cut_in_arr
 
 
+def get_edge_tpls_arr(n: int):
+    tpls = []
+    index = 0
+    for i in range(n):
+        for j in range(i + 1, n):
+            tpls.append((i, j, 0))
+
+            index += 1
+
+    return np.array(tpls)
+
+
+def partition_to_edge_idx(n: int, partition: tuple[list, list]):
+    # unfortunately networkx only returns a partition, not the edges in the cut
+    vertices_one = np.array(partition[0])
+    vertices_two = np.array(partition[1])
+    # we want all possible combinations, as that is the edges of our cut as it is fully connected
+    # meshgrid will repeat first array in along columns, second along rows, returning two arrays
+    # so if you then take any element and pair it with the same location in the second array you get a combination
+    grid = np.meshgrid(vertices_one, vertices_two)
+    # we then stack them along the third dimension as described, so we the values at each point are a combiantion
+    # of the two arrays
+    stacked = np.dstack(grid)
+    # finally we reshape the array into a simple 2D array, where each row is an edge
+    # the -1 indicates that the shape of the array in the first dimension is inferred (the number of edges)
+    edges = stacked.reshape(-1, 2)
+    # we sort the edges so that the lowest index is first
+    edges = np.sort(edges, axis=1)
+    # finally we compute the edge index of each edge
+    return edge_idx(edges[:, 0], edges[:, 1], n)
+
+
 def extended_formulation(n: int, graph_l: np.ndarray):
     model = gp.Model("extended")
     model.setParam('LogToConsole', 0)
@@ -184,7 +224,7 @@ def extended_formulation(n: int, graph_l: np.ndarray):
             model.addConstr(f_s_arc_1 - x_edge <= 0, name=f"f_{s}(arc {m * 2})<=x({m})")
             model.addConstr(f_s_arc_2 - x_edge <= 0, name=f"f_{s}(arc {m * 2 + 1})<=x({m})")
 
-    return TSPModel(model, n, Formulation.EXTENDED, char_vec)
+    return TSPModel(model, n, Formulation.EXTENDED)
 
 
 def cutting_plane_model(n: int, graph_l: np.ndarray):
@@ -192,12 +232,12 @@ def cutting_plane_model(n: int, graph_l: np.ndarray):
     model.setParam('LogToConsole', 0)
     m_edges = (n * (n - 1)) // 2
 
-    char_vec: gp.MVar = model.addMVar(shape=(m_edges,), lb=0, name='char_')
+    char_vec: gp.MVar = model.addMVar(shape=(m_edges,), lb=0, ub=1, name='char_')
 
     z = (char_vec * graph_l).sum()
     model.setObjective(z, gp.GRB.MINIMIZE)
 
-    return TSPModel(model, n, Formulation.CUTTING_PLANE)
+    return TSPModel(model, n, Formulation.CUTTING_PLANE, True)
 
 
 class Formulation(Enum):
@@ -212,13 +252,11 @@ class TSPModel:
     char_vec: Optional[gp.MVar]
     n: int
 
-    def __init__(self, model, n: int, formulation: Formulation, char_vec: Optional[gp.MVar] = None):
+    def __init__(self, model, n: int, formulation: Formulation, is_relaxed=False):
         self.formulation = formulation
-        self.is_relaxed = False
+        self.is_relaxed = is_relaxed
         self.model = model
         self.n = n
-
-        self.char_vec = char_vec
 
     def optimize(self):
         if self.formulation == Formulation.EXTENDED:
@@ -247,20 +285,13 @@ class TSPModel:
 
     def char_vec_values(self) -> tuple[gp.MVar, np.ndarray]:
         m_edges = (self.n * (self.n - 1)) // 2
-        if self.char_vec is None:
-            var_list = []
-            x_values = np.zeros(m_edges)
-            for e in range(m_edges):
-                char_e = self.model.getVarByName(f"char_[{e}]")
-                var_list.append(char_e)
-                x_values[e] = char_e.X
-            return gp.MVar.fromlist(var_list), x_values
-        else:
-            x_values = np.zeros(m_edges)
-            for e, char_var in enumerate(self.char_vec.tolist()):
-                x_values[e] = char_var.X
-
-            return self.char_vec, x_values
+        var_list = []
+        x_values = np.zeros(m_edges)
+        for e in range(m_edges):
+            char_e = self.model.getVarByName(f"char_[{e}]")
+            var_list.append(char_e)
+            x_values[e] = char_e.X
+        return gp.MVar.fromlist(var_list), x_values
 
     def print_sol(self):
         char_vec, x_values = self.char_vec_values()
@@ -274,20 +305,50 @@ class TSPModel:
                 add_value = f" with value {x_val}" if self.is_relaxed else ""
                 print(f"\tedge {edge_names[e_i]} in solution{add_value}")
 
+        return char_vec, x_values
+
 
 def compute_cut_weight(cut: np.ndarray, x_values: np.ndarray):
     # TODO return the weight = x(delta(cut))
     return 0
 
 
-def compute_min_cut(x_values: np.ndarray):
-    raise NotImplementedError()
+EDGE_14 = get_edge_names(14)
 
-    # TODO implement min cut
 
-    weight = compute_cut_weight(np.ndarray([0]), x_values)
-    # TODO return delta(U) and the cut_weight
-    return [0], weight
+def check_if_subtour(x_values: np.ndarray, n: int):
+    """Check if graph, given the char. vector, is connected.
+    Start at a random node, then find all nodes that are connected to it.
+    Output: #nodes in U and partition U, which are the visited nodes from the initial node.
+
+    Complexity: O(|V|+|E|)"""
+    nodes = np.arange(n)
+    visited = set()
+    visited_edges = set()
+    outgoing_edges = set()
+    valid_edges = np.where(x_values == 1)[0]
+    edge_names = ''
+    for ve in valid_edges:
+        edge_names += ' ' + EDGE_14[ve]
+    random_edge_idx = random.randint(0, valid_edges.size - 1)
+    stack = [random.randint(0, n - 1)]  # [0]  # Start from vertex 0 -> random
+
+    while stack:
+        node = stack.pop()
+        visited.add(node)
+        cut_idx = get_cut_idx(node, n)
+        outgoing_edges.update(set(cut_idx))
+        neighbors = np.delete(nodes, node)
+        for i in range(len(cut_idx)):
+            edge = cut_idx[i]
+            edge_in_x = x_values[edge]
+            if edge_in_x > 0 and neighbors[i] not in visited:
+                stack.append(neighbors[i])
+                visited_edges.add(edge)
+
+    cut_set = list(outgoing_edges.difference(visited_edges))
+    # If number of visited eges is not equal to n, we have a subtour
+    return len(visited) != n, cut_set
 
 
 def separation(n: int, char_vec: gp.MVar, x_values: np.ndarray, model: gp.Model) -> bool:
@@ -295,7 +356,11 @@ def separation(n: int, char_vec: gp.MVar, x_values: np.ndarray, model: gp.Model)
     # based on bounds we put in model we assume x >= 0
     epsilon = 0.0001
 
-    num_cstr = len(model.getConstrs())
+    cstrs = model.getConstrs()
+    num_cstr = len(cstrs)
+    print(num_cstr)
+    if num_cstr > 3000:
+        print()
 
     for v in range(n):
         edges = get_cut_idx(v, n)
@@ -304,11 +369,11 @@ def separation(n: int, char_vec: gp.MVar, x_values: np.ndarray, model: gp.Model)
             model.addConstr(edge_vars.sum() == 2, name=f"x(delta({v}))==2")
             return False
 
-    delta_cut, cut_weight = compute_min_cut(x_values)
-    epsilon = 0.0001
-    if 2 - cut_weight > epsilon:
-        cut_vars = char_vec[delta_cut]
-        model.addConstr(cut_vars.sum() >= 2, name=f"x(delta(cut_{uuid4()}))>=2")
+    is_subtour, subtour_edges = check_if_subtour(x_values, n)
+
+    if is_subtour:
+        subtour_vars = char_vec[subtour_edges]
+        model.addConstr(subtour_vars.sum() >= 2, name=f"x(delta(cut_{uuid4()}))>=2")
         return False
 
     return True
@@ -341,15 +406,20 @@ def run():
 
     cut_model = cutting_plane_model(n, graph_l)
     cut_model.optimize()
-    cut_model.print_sol()
+    char_vec, x_values = cut_model.print_sol()
+
+    # epsilon = 0.0001
+    # for v in range(n):
+    #     edges = get_cut_idx(v, n)
+    #     if np.abs(np.sum(x_values[edges]) - 2) > epsilon:
+    #         edge_vars = char_vec[edges]
 
     # model = extended_formulation(n, graph_l)
-    #
-    # m = ExtendedModel(model, n)
-    # m.optimize()
-    # m.print_sol()
 
-    # m_relax = m.relax()
+    # model.optimize()
+    # model.print_sol()
+
+    # m_relax = model.relax()
     # m_relax.optimize()
     # m_relax.print_sol()
 
