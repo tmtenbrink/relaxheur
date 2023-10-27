@@ -165,9 +165,6 @@ def extended_formulation(n: int, graph_l: np.ndarray):
     z = (char_vec * graph_l).sum()
     model.setObjective(z, gp.GRB.MINIMIZE)
 
-    # cut_out_r = cut_out(0, n)
-    # cut_in_r = cut_in(0, n)
-    build_i = 0
     # each column is all the vertices other than the vertex corresponding to column
     # so (n-1), n array
     cut_arr = get_cut_idx_arr(np.arange(n), n)
@@ -183,15 +180,14 @@ def extended_formulation(n: int, graph_l: np.ndarray):
     fs_r_in: gp.MVar = flow[:, cut_in_r]
     model.addConstr(fs_r_out.sum(axis=1) - fs_r_in.sum(axis=1) >= 2, name=f"f_s(delta_out(r))-f_s(delta_in(r))>=2")
 
-    # for v in range(n):
-    #     print(f"in i {cuts_in[v]}")
-    #     print(f"in {cut_in(v, n)}")
-    #
-    #     print(f"out i {cuts_out[v]}")
-    #     print(f"out {cut_in(v, n)}")
-
     for s in range(1, n):
         f_s: gp.MVar = flow[s - 1]
+        # we make sure we get arrays correspond to the right index of the char. vector
+        arcs_one_direction = np.arange(m_edges) * 2
+        arcs_other_direction = np.arange(m_edges) * 2 + 1
+        model.addConstr(f_s[arcs_one_direction] - char_vec <= 0, name=f"f_1")
+        model.addConstr(f_s[arcs_other_direction] - char_vec <= 0, name=f"f_2")
+
         for other_v in range(0, n):
             # skip r and s
             if other_v == 0 or other_v == s:
@@ -199,19 +195,13 @@ def extended_formulation(n: int, graph_l: np.ndarray):
 
             cut_out_v = cuts_out[other_v]
             cut_in_v = cuts_in[other_v]
-            # cut_out_v = cut_out(other_v, n)
-            # cut_in_v = cut_in(other_v, n)
 
             fs_v_out: gp.MVar = f_s[cut_out_v]
             fs_v_in: gp.MVar = f_s[cut_in_v]
 
             model.addConstr(fs_v_out.sum() - fs_v_in.sum() == 0,
                             name=f"f_{s}(delta_out({other_v}))-f_{s}(delta_in({other_v}))==0")
-        # we make sure we get arrays correspond to the right index of the char. vector
-        arcs_one_direction = np.arange(m_edges) * 2
-        arcs_other_direction = np.arange(m_edges) * 2 + 1
-        model.addConstr(f_s[arcs_one_direction] - char_vec <= 0, name=f"f_1")
-        model.addConstr(f_s[arcs_other_direction] - char_vec <= 0, name=f"f_2")
+    # We run update to make sure the timer works
     model.update()
     build_time = (perf_counter_ns() - start_build) / 1e9
     print(f"Took {build_time} s.")
@@ -317,7 +307,6 @@ def compute_min_cut(x_values: np.ndarray, n: int, base_graph: nx.Graph, edge_tup
 
     cut_value, partition = nx.stoer_wagner(weighted_graph)
     cut_edges = partition_to_edge_idx(n, partition)
-    # edge_name = edge_name_str(x_values)
     return cut_value, cut_edges
 
 
@@ -388,8 +377,6 @@ def run():
     m_relax = model.relax()
     m_relax.optimize()
     # m_relax.print_sol()
-
-    # we fix r is the first vertex
 
 
 # Press the green button in the gutter to run the script.
