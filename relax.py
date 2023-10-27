@@ -290,24 +290,27 @@ class TSPModel:
 
 def adjacency_matrix_from_vector(x_values: np.ndarray, n: int):
     """Create an adjacency matrix from x_values"""
+    m_edges = (n * (n - 1)) // 2
     if len(x_values) != (n * (n - 1)) // 2:
         raise ValueError("x_values does not have the correct length")
 
-    adjacency_matrix = [[[0, [(i, j)]] for i in range(n)] for j in range(n)]
+    # adjacency_matrix = [[[0, [(i, j)]] for i in range(n)] for j in range(n)]
+    adjacency_matrix = np.zeros((n, n))
+    matr_edges = np.zeros((n, n, m_edges), dtype=int)
 
     for i in range(n):
         for j in range(i + 1, n):
-            idx = edge_idx(i, j, n)
-            adjacency_matrix[i][j] = [x_values[idx], [(i, j)]]
-            adjacency_matrix[j][i] = adjacency_matrix[i][j]
+            edge = edge_idx(i, j, n)
+            matr_edges[i][j][edge] = 1
+            matr_edges[j][i][edge] = 1
 
-    return adjacency_matrix
+    return adjacency_matrix, matr_edges
 
 
-def sw_minimum_cut_phase(graph, a):
-    graph_n = len(graph)
+def sw_minimum_cut_phase(graph_weights, graph_edges, a):
+    graph_n = graph_weights.shape[0]
     A = [a]
-    cut_edges = []
+    cut_edges = np.array([])
     max_cut_weight = -1
 
     while len(A) < graph_n:
@@ -316,13 +319,11 @@ def sw_minimum_cut_phase(graph, a):
 
         for v in range(graph_n):
             if v not in A:
-                cut_weight = sum(graph[v][w][0] for w in A)
+                cut_weight = np.sum(graph_weights[v, A])
                 if cut_weight > max_cut_weight:
                     max_cut_weight = cut_weight
                     u = v
-                    cut_edges = []
-                    for w in A:
-                        cut_edges += graph[v][w][1]
+                    cut_edges = np.sum(graph_edges[v, A], axis=0)
 
         A.append(u)
 
@@ -332,41 +333,40 @@ def sw_minimum_cut_phase(graph, a):
     return s, t, max_cut_weight, cut_edges
 
 
-def sw_minimum_cut(graph):
+def sw_minimum_cut(graph_weights, graph_edges):
     """Find the minimum cut of a graph using the Stoer-Wagner algorithm."""
-    n = len(graph)
+    n = graph_weights.shape[0]
 
     min_cut = float("inf")
     contractions = []
     phase = 0
-    best_edge_list = []
+    min_cut_edges = np.array([])
 
     while n > 1:
         a = 0  # Any vertex from V
-        s, t, cut_weight, cut_edges = sw_minimum_cut_phase(graph[:n][:n], a)
+        s, t, cut_weight, cut_edges = sw_minimum_cut_phase(graph_weights[:n, :n], graph_edges[:n, :n, :], a)
         if cut_weight < min_cut:
             min_cut = cut_weight
-            best_edge_list = cut_edges
+            min_cut_edges = cut_edges
 
         # Merge vertices s and t
         contractions.append((s, t))
         for i in range(n):
             if i != t:
-                graph[s][i] = [
-                    graph[s][i][0] + graph[t][i][0],
-                    graph[s][i][1] + graph[t][i][1],
-                ]
-                graph[i][s] = graph[s][i]
+                graph_weights[s, i] = graph_weights[s, i] + graph_weights[t, i]
+                graph_edges[s, i] = graph_edges[s, i] + graph_edges[t, i]
 
         for i in range(t, n - 1):
             for j in range(n):
-                graph[i][j] = graph[i + 1][j]
-                graph[j][i] = graph[i][j]
+                graph_weights[i, j] = graph_weights[i + 1, j]
+                graph_weights[j, i] = graph_weights[i][j]
+                graph_edges[i, j] = graph_edges[i + 1, j]
+                graph_edges[j, i] = graph_edges[i + 1, j]
 
         n -= 1
         phase += 1
 
-    return min_cut, best_edge_list
+    return min_cut, min_cut_edges
 
 
 def compute_min_cut(x_values: np.ndarray, n: int) -> tuple[int, np.ndarray]:
@@ -374,12 +374,12 @@ def compute_min_cut(x_values: np.ndarray, n: int) -> tuple[int, np.ndarray]:
     index convention.
     """
     # we compute an adjacency matrix to more easily perform the stoer-wagner algorithm
-    graph = adjacency_matrix_from_vector(x_values, n)
-    min_cut, best_edge_list = sw_minimum_cut(graph)
+    graph, graph_edges = adjacency_matrix_from_vector(x_values, n)
+    min_cut, min_cut_edges = sw_minimum_cut(graph, graph_edges)
     # we turn the list of edges back into array using our edge index convention
-    cut_edges = np.array([edge_idx(e[0], e[1], n) for e in best_edge_list])
+    cut_edge_idx = np.flatnonzero(min_cut_edges)
 
-    return min_cut, cut_edges
+    return min_cut, cut_edge_idx
 
 
 def separation(
