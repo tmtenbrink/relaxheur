@@ -10,13 +10,13 @@ import gurobipy as gp
 
 
 def parse_line(ln: str):
-    return list(map(lambda i: int(i), ln.rstrip().split(' ')))
+    return list(map(lambda i: int(i), ln.rstrip().split(" ")))
 
 
 def get_inst_path():
-    parser = argparse.ArgumentParser(description='Process some integers.')
+    parser = argparse.ArgumentParser(description="Process some integers.")
 
-    parser.add_argument('inst_name', help='Filename of instance')
+    parser.add_argument("inst_name", help="Filename of instance")
 
     args = parser.parse_args()
 
@@ -69,7 +69,9 @@ def get_vert_indexes_for_cut(vertices: np.ndarray, n: int):
     # each column is the vertex repeated
     vertices_repeated = np.tile(vertices, (n - 1, 1))
     # each column is the index from 0 to n-1
-    indexes_repeated = np.repeat(np.arange(n - 1), vertices_len).reshape((n - 1, vertices_len))
+    indexes_repeated = np.repeat(np.arange(n - 1), vertices_len).reshape(
+        (n - 1, vertices_len)
+    )
     # boolean mask of elements where index is less than vertex
     lt_mask = indexes_repeated < vertices_repeated
     # boolean mask of where index is greater/equal than vertex
@@ -83,31 +85,49 @@ def get_vert_indexes_for_cut(vertices: np.ndarray, n: int):
 
 def get_cut_idx_arr(vertices: np.ndarray, n: int):
     """Vertices should be 1D array."""
-    vertices_repeated, indexes_repeated, lt_mask, gt_mask = get_vert_indexes_for_cut(vertices, n)
+    vertices_repeated, indexes_repeated, lt_mask, gt_mask = get_vert_indexes_for_cut(
+        vertices, n
+    )
 
     # we can now use edge_idx as before
-    vertices_repeated[gt_mask] = edge_idx(vertices_repeated[gt_mask], indexes_repeated[gt_mask], n)
-    vertices_repeated[lt_mask] = edge_idx(indexes_repeated[lt_mask], vertices_repeated[lt_mask], n)
+    vertices_repeated[gt_mask] = edge_idx(
+        vertices_repeated[gt_mask], indexes_repeated[gt_mask], n
+    )
+    vertices_repeated[lt_mask] = edge_idx(
+        indexes_repeated[lt_mask], vertices_repeated[lt_mask], n
+    )
 
     return vertices_repeated
 
 
 def cut_out_arr(vertices: np.ndarray, n: int):
-    vertices_repeated, indexes_repeated, lt_mask, gt_mask = get_vert_indexes_for_cut(vertices, n)
+    vertices_repeated, indexes_repeated, lt_mask, gt_mask = get_vert_indexes_for_cut(
+        vertices, n
+    )
 
     # we can now use edge_idx as before
-    vertices_repeated[gt_mask] = edge_idx(vertices_repeated[gt_mask], indexes_repeated[gt_mask], n) * 2 + 1
-    vertices_repeated[lt_mask] = edge_idx(indexes_repeated[lt_mask], vertices_repeated[lt_mask], n) * 2
+    vertices_repeated[gt_mask] = (
+        edge_idx(vertices_repeated[gt_mask], indexes_repeated[gt_mask], n) * 2 + 1
+    )
+    vertices_repeated[lt_mask] = (
+        edge_idx(indexes_repeated[lt_mask], vertices_repeated[lt_mask], n) * 2
+    )
 
     return vertices_repeated
 
 
 def cut_in_arr(vertices: np.ndarray, n: int):
-    vertices_repeated, indexes_repeated, lt_mask, gt_mask = get_vert_indexes_for_cut(vertices, n)
+    vertices_repeated, indexes_repeated, lt_mask, gt_mask = get_vert_indexes_for_cut(
+        vertices, n
+    )
 
     # we can now use edge_idx as before
-    vertices_repeated[gt_mask] = edge_idx(vertices_repeated[gt_mask], indexes_repeated[gt_mask], n) * 2
-    vertices_repeated[lt_mask] = edge_idx(indexes_repeated[lt_mask], vertices_repeated[lt_mask], n) * 2 + 1
+    vertices_repeated[gt_mask] = (
+        edge_idx(vertices_repeated[gt_mask], indexes_repeated[gt_mask], n) * 2
+    )
+    vertices_repeated[lt_mask] = (
+        edge_idx(indexes_repeated[lt_mask], vertices_repeated[lt_mask], n) * 2 + 1
+    )
 
     return vertices_repeated
 
@@ -116,12 +136,14 @@ def extended_formulation(n: int, graph_l: np.ndarray):
     print("Building extended formulation...")
     start_build = perf_counter_ns()
     model = gp.Model("extended")
-    model.setParam('LogToConsole', 0)
+    model.setParam("LogToConsole", 0)
     m_edges = (n * (n - 1)) // 2
 
     # for i<j (i, j) is the (n-1 + n-2 + ... + n - i) + (j - i -1)th element
     # i.e. index is i(2n-i-1)/2 + (j-i-1)
-    char_vec: gp.MVar = model.addMVar(shape=(m_edges,), vtype=gp.GRB.BINARY, lb=0, name='char_')
+    char_vec: gp.MVar = model.addMVar(
+        shape=(m_edges,), vtype=gp.GRB.BINARY, lb=0, name="char_"
+    )
     num_vert_non_r = n - 1
     num_arcs = 2 * m_edges
     # rows are vertices without r
@@ -145,7 +167,10 @@ def extended_formulation(n: int, graph_l: np.ndarray):
     cut_out_r = cuts_out[0]
     fs_r_out: gp.MVar = flow[:, cut_out_r]
     fs_r_in: gp.MVar = flow[:, cut_in_r]
-    model.addConstr(fs_r_out.sum(axis=1) - fs_r_in.sum(axis=1) >= 2, name=f"f_s(delta_out(r))-f_s(delta_in(r))>=2")
+    model.addConstr(
+        fs_r_out.sum(axis=1) - fs_r_in.sum(axis=1) >= 2,
+        name=f"f_s(delta_out(r))-f_s(delta_in(r))>=2",
+    )
 
     for s in range(1, n):
         f_s: gp.MVar = flow[s - 1]
@@ -166,8 +191,10 @@ def extended_formulation(n: int, graph_l: np.ndarray):
             fs_v_out: gp.MVar = f_s[cut_out_v]
             fs_v_in: gp.MVar = f_s[cut_in_v]
 
-            model.addConstr(fs_v_out.sum() - fs_v_in.sum() == 0,
-                            name=f"f_{s}(delta_out({other_v}))-f_{s}(delta_in({other_v}))==0")
+            model.addConstr(
+                fs_v_out.sum() - fs_v_in.sum() == 0,
+                name=f"f_{s}(delta_out({other_v}))-f_{s}(delta_in({other_v}))==0",
+            )
     # We run update to make sure the timer works
     model.update()
     build_time = (perf_counter_ns() - start_build) / 1e9
@@ -179,10 +206,10 @@ def cutting_plane_model(n: int, graph_l: np.ndarray):
     print("Setting up cutting plane model...")
     start_build = perf_counter_ns()
     model = gp.Model("cutting plane")
-    model.setParam('LogToConsole', 0)
+    model.setParam("LogToConsole", 0)
     m_edges = (n * (n - 1)) // 2
 
-    char_vec: gp.MVar = model.addMVar(shape=(m_edges,), lb=0, name='char_')
+    char_vec: gp.MVar = model.addMVar(shape=(m_edges,), lb=0, name="char_")
 
     z = (char_vec * graph_l).sum()
     model.setObjective(z, gp.GRB.MINIMIZE)
@@ -303,6 +330,7 @@ def sw_minimum_cut_phase(graph, a):
 
 
 def sw_minimum_cut(graph):
+    """Find the minimum cut of a graph using the Stoer-Wagner algorithm."""
     n = len(graph)
 
     min_cut = float("inf")
@@ -336,15 +364,14 @@ def sw_minimum_cut(graph):
         n -= 1
         phase += 1
 
-
     return min_cut, best_edge_list
 
 
-def compute_min_cut(x_values: np.ndarray, n: int) -> tuple[
-    int, np.ndarray]:
-    """Compute min cut using Stoer–Wagner algorithm using Networkx. x_values should be 1D array with our edge
+def compute_min_cut(x_values: np.ndarray, n: int) -> tuple[int, np.ndarray]:
+    """Compute min cut using Stoer–Wagner algorithm. x_values should be 1D array with our edge
     index convention. edge_tuples_arr should be of the same length, but here each element is a 3-element array
-    (so an m*3 array) that is (i, j, w) with i the lower vertex index, j the higher and w to be used for weight."""
+    (so an m*3 array) that is (i, j, w) with i the lower vertex index, j the higher and w to be used for weight.
+    """
 
     graph = adjacency_matrix_from_vector(x_values, n)
     min_cut, best_edge_list = sw_minimum_cut(graph)
@@ -353,8 +380,21 @@ def compute_min_cut(x_values: np.ndarray, n: int) -> tuple[
     return min_cut, cut_edges
 
 
-def separation(n: int, char_vec: gp.MVar, x_values: np.ndarray, model: gp.Model) -> bool:
-    """Tests whether x is in P_subtour, if not it adds the inequality to the model"""
+def separation(
+    n: int, char_vec: gp.MVar, x_values: np.ndarray, model: gp.Model
+) -> bool:
+    """Tests whether x is in P_subtour, if not it adds the violated inequality to the model.
+    1) The constraint >=0 is already defined in the char_vector.
+    2) We check if x(delta(v))=2, for all v, with some tolerance epsilon.
+    3) We check x(delta(U))>= 2, for all U, by finding the minimum cut and checking if it
+    is larger than 2 (with tolerance epsilon). Note that if the minimimum cut is larger
+    than 2, we know that all cuts are larger than 2.
+
+    It is easy to see that constraints 1 and 2 are checked in polynomial time. Constraint 3
+    has exponentially many inequalitites, but can be checked in polynomial time since the
+    min-cut can be found in polynomial time by the Stoer-Wagner algorithm.
+    """
+
     # based on bounds we put in model we assume x >= 0
     epsilon = 0.0001
 
@@ -368,7 +408,7 @@ def separation(n: int, char_vec: gp.MVar, x_values: np.ndarray, model: gp.Model)
             return False
 
     cut_weight, min_cut_edges = compute_min_cut(x_values, n)
-    if cut_weight < 2:
+    if cut_weight < 2 - epsilon:
         subtour_vars = char_vec[min_cut_edges]
         model.addConstr(subtour_vars.sum() >= 2, name=f"x(delta(cut_{uuid4()}))>=2")
         return False
@@ -410,7 +450,6 @@ def run():
     # cut_model.print_sol()
 
     model = extended_formulation(n, graph_l)
-
     model.optimize()
     # model.print_sol()
 
@@ -420,7 +459,7 @@ def run():
 
 
 # Press the green button in the gutter to run the script.
-if __name__ == '__main__':
+if __name__ == "__main__":
     run()
 
 # See PyCharm help at https://www.jetbrains.com/help/pycharm/
