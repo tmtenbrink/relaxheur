@@ -64,7 +64,7 @@ def adjacency_matrix_from_vector(x_values: np.ndarray, n: int):
     for i in range(n):
         for j in range(i + 1, n):
             idx = edge_idx(i, j, n)
-            adjacency_matrix[i][j] = x_values[idx]
+            adjacency_matrix[i][j] = [x_values[idx], [(i, j)]]
             adjacency_matrix[j][i] = adjacency_matrix[i][j]
 
     return adjacency_matrix

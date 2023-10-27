@@ -7,7 +7,6 @@ from time import perf_counter_ns
 
 import numpy as np
 import gurobipy as gp
-import networkx as nx
 
 
 def parse_line(ln: str):
@@ -111,38 +110,6 @@ def cut_in_arr(vertices: np.ndarray, n: int):
     vertices_repeated[lt_mask] = edge_idx(indexes_repeated[lt_mask], vertices_repeated[lt_mask], n) * 2 + 1
 
     return vertices_repeated
-
-
-def get_edge_tpls_arr(n: int):
-    tpls = []
-    index = 0
-    for i in range(n):
-        for j in range(i + 1, n):
-            tpls.append((i, j, 0.0))
-
-            index += 1
-
-    return np.array(tpls)
-
-
-def partition_to_edge_idx(n: int, partition: tuple[list, list]):
-    # unfortunately networkx only returns a partition, not the edges in the cut
-    vertices_one = np.array(partition[0])
-    vertices_two = np.array(partition[1])
-    # we want all possible combinations, as that is the edges of our cut as it is fully connected
-    # meshgrid will repeat first array in along columns, second along rows, returning two arrays
-    # so if you then take any element and pair it with the same location in the second array you get a combination
-    grid = np.meshgrid(vertices_one, vertices_two)
-    # we then stack them along the third dimension as described, so we the values at each point are a combiantion
-    # of the two arrays
-    stacked = np.dstack(grid)
-    # finally we reshape the array into a simple 2D array, where each row is an edge
-    # the -1 indicates that the shape of the array in the first dimension is inferred (the number of edges)
-    edges = stacked.reshape(-1, 2)
-    # we sort the edges so that the lowest index is first
-    edges = np.sort(edges, axis=1)
-    # finally we compute the edge index of each edge
-    return edge_idx(edges[:, 0], edges[:, 1], n)
 
 
 def extended_formulation(n: int, graph_l: np.ndarray):
@@ -293,25 +260,100 @@ class TSPModel:
         return char_vec, x_values
 
 
-def compute_min_cut(x_values: np.ndarray, n: int, base_graph: nx.Graph, edge_tuples_arr: np.ndarray) -> tuple[
+def adjacency_matrix_from_vector(x_values: np.ndarray, n: int):
+    """Create an adjacency matrix from x_values"""
+    if len(x_values) != (n * (n - 1)) // 2:
+        raise ValueError("x_values does not have the correct length")
+
+    adjacency_matrix = [[[0, [(i, j)]] for i in range(n)] for j in range(n)]
+
+    for i in range(n):
+        for j in range(i + 1, n):
+            idx = edge_idx(i, j, n)
+            adjacency_matrix[i][j] = [x_values[idx], [(i, j)]]
+            adjacency_matrix[j][i] = adjacency_matrix[i][j]
+
+    return adjacency_matrix
+
+
+def sw_minimum_cut_phase(graph, a):
+    n = len(graph)
+    A = [a]
+    w_list = []
+
+    while len(A) < n:
+        max_cut_weight = -1
+
+        for v in range(n):
+            if v not in A:
+                cut_weight = sum(graph[v][w][0] for w in A)
+                if cut_weight > max_cut_weight:
+                    max_cut_weight = cut_weight
+                    u = v
+                    w_list = []
+                    for w in A:
+                        w_list += graph[v][w][1]
+
+        A.append(u)
+
+    s = min(A[-1], A[-2])
+    t = max(A[-1], A[-2])
+
+    return s, t, cut_weight, w_list
+
+
+def sw_minimum_cut(graph):
+    n = len(graph)
+
+    min_cut = float("inf")
+    contractions = []
+    phase = 0
+    best_edge_list = []
+
+    while n > 1:
+        a = 0  # Any vertex from V
+        s, t, cut_weight, w_list = sw_minimum_cut_phase(graph[:n][:n], a)
+        if cut_weight < min_cut:
+            min_cut = cut_weight
+            best_edge_list = w_list
+
+        # Merge vertices s and t
+        contractions.append((s, t))
+        # print(s, t, cut_weight)
+        for i in range(n):
+            if i != t:
+                graph[s][i] = [
+                    graph[s][i][0] + graph[t][i][0],
+                    graph[s][i][1] + graph[t][i][1],
+                ]
+                graph[i][s] = graph[s][i]
+
+        for i in range(t, n - 1):
+            for j in range(n):
+                graph[i][j] = graph[i + 1][j]
+                graph[j][i] = graph[i][j]
+
+        n -= 1
+        phase += 1
+
+
+    return min_cut, best_edge_list
+
+
+def compute_min_cut(x_values: np.ndarray, n: int) -> tuple[
     int, np.ndarray]:
     """Compute min cut using Stoer–Wagner algorithm using Networkx. x_values should be 1D array with our edge
     index convention. edge_tuples_arr should be of the same length, but here each element is a 3-element array
     (so an m*3 array) that is (i, j, w) with i the lower vertex index, j the higher and w to be used for weight."""
-    # We make a copy so we do not modify the base graph
-    weighted_graph = base_graph.copy()
-    # We copy the array with weights zero
-    edge_tuples_arr = edge_tuples_arr.copy()
-    edge_tuples_arr[:, 2] = x_values
-    weighted_graph.add_weighted_edges_from(edge_tuples_arr)
 
-    cut_value, partition = nx.stoer_wagner(weighted_graph)
-    cut_edges = partition_to_edge_idx(n, partition)
-    return cut_value, cut_edges
+    graph = adjacency_matrix_from_vector(x_values, n)
+    min_cut, best_edge_list = sw_minimum_cut(graph)
+    cut_edges = np.array([edge_idx(e[0], e[1], n) for e in best_edge_list])
+
+    return min_cut, cut_edges
 
 
-def separation(n: int, char_vec: gp.MVar, x_values: np.ndarray, model: gp.Model, base_graph: nx.Graph,
-               edge_tuples_arr: np.ndarray) -> bool:
+def separation(n: int, char_vec: gp.MVar, x_values: np.ndarray, model: gp.Model) -> bool:
     """Tests whether x is in P_subtour, if not it adds the inequality to the model"""
     # based on bounds we put in model we assume x >= 0
     epsilon = 0.0001
@@ -325,7 +367,7 @@ def separation(n: int, char_vec: gp.MVar, x_values: np.ndarray, model: gp.Model,
             model.addConstr(edge_vars.sum() == 2, name=f"x(delta({v}))==2")
             return False
 
-    cut_weight, min_cut_edges = compute_min_cut(x_values, n, base_graph, edge_tuples_arr)
+    cut_weight, min_cut_edges = compute_min_cut(x_values, n)
     if cut_weight < 2:
         subtour_vars = char_vec[min_cut_edges]
         model.addConstr(subtour_vars.sum() >= 2, name=f"x(delta(cut_{uuid4()}))>=2")
@@ -339,8 +381,6 @@ def optimize_cut_model(m: TSPModel):
     i = 0
     invalid = True
 
-    edge_tpls_arr = get_edge_tpls_arr(m.n)
-    base_graph = nx.complete_graph(m.n)
     while invalid:
         if i > max_i:
             print("Taking a long time...")
@@ -348,7 +388,7 @@ def optimize_cut_model(m: TSPModel):
         m.model.optimize()
         char_vec, x_values = m.char_vec_values()
         # this modifies the underlying model and adds constraints
-        in_subtour = separation(m.n, char_vec, x_values, m.model, base_graph, edge_tpls_arr)
+        in_subtour = separation(m.n, char_vec, x_values, m.model)
 
         invalid = not in_subtour
         i += 1
@@ -358,7 +398,7 @@ def optimize_cut_model(m: TSPModel):
 
 def run():
     inst_path = get_inst_path()
-    # inst_path = Path('tsp/bays29.dat')
+    # inst_path = Path('tsp/gr48.dat')
 
     n, graph_l = parse_instance(inst_path)
 
