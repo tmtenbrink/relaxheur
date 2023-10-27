@@ -441,8 +441,8 @@ def optimize_cut_model(m: TSPModel):
 
 
 def run():
-    # inst_path = get_inst_path()
-    inst_path = Path('tsp/gr48.dat')
+    inst_path = get_inst_path()
+    # inst_path = Path('tsp/gr48.dat')
 
     n, graph_l = parse_instance(inst_path)
 
