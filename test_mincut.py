@@ -39,7 +39,7 @@ def check_subtour(x_values: np.ndarray, n: int):
     Complexity: O(|V|+|E|)"""
     nodes = np.arange(n)
     visited = set()
-    stack = [random.randint(0, n-1)]  # [0]  # Start from vertex 0 -> random
+    stack = [random.randint(0, n - 1)]  # [0]  # Start from vertex 0 -> random
 
     while stack:
         node = stack.pop()
@@ -136,6 +136,40 @@ def compute_min_cut(x_values: np.ndarray, n: int, base_graph: nx.Graph, edge_tup
     return cut_value, cut_edges
 
 
+def get_cut_idx_arr(vertices: np.ndarray, n: int):
+    """Vertices should be 1D array."""
+    vertices_len = vertices.size
+    # each column is the vertex repeated
+    vertices_repeated = np.tile(vertices, (n - 1, 1))
+    # each column is the index from 0 to n-1
+    indexes_repeated = np.repeat(np.arange(n - 1), vertices_len).reshape((n - 1, vertices_len))
+    # boolean mask of elements where index is less than vertex
+    lt_mask = indexes_repeated < vertices_repeated
+    # boolean mask of where index is greater/equal than vertex
+    gt_mask = indexes_repeated >= vertices_repeated
+    # we add one to the ones that are greater or equal, so that vertex itself doesn't show up
+    # now each column is all the vertices not equal to the vertex of that column
+    indexes_repeated[gt_mask] += 1
+
+    # we can now use edge_idx as before
+    vertices_repeated[gt_mask] = edge_idx(vertices_repeated[gt_mask], indexes_repeated[gt_mask], n)
+    vertices_repeated[lt_mask] = edge_idx(indexes_repeated[lt_mask], vertices_repeated[lt_mask], n)
+
+    return vertices_repeated
+
+
+def cut_out(vertices: np.ndarray, n: int):
+    all_edges = get_cut_idx_arr(vertices, n)
+
+    return all_edges*2
+
+
+def cut_in(vertices: np.ndarray, n: int):
+    all_edges = get_cut_idx_arr(vertices, n)
+
+    return all_edges * 2+1
+
+
 # n = 6
 
 #
@@ -144,8 +178,11 @@ def compute_min_cut(x_values: np.ndarray, n: int, base_graph: nx.Graph, edge_tup
 #
 # print(check_subtour(x_values, n))
 
+# n = 6
+# x_values = np.array([1, 1.999, 0, 0, 0, 1, 0.33, 0, 0, 1.5, 0, 0, 1, 1, 1])
+# base_graph = nx.complete_graph(n)
+# edge_tuples_arr = get_edge_tpls_arr(n)
+# compute_min_cut(x_values, n, base_graph, edge_tuples_arr)
 n = 6
-x_values = np.array([1, 1.999, 0, 0, 0, 1, 0.33, 0, 0, 1.5, 0, 0, 1, 1, 1])
-base_graph = nx.complete_graph(n)
-edge_tuples_arr = get_edge_tpls_arr(n)
-compute_min_cut(x_values, n, base_graph, edge_tuples_arr)
+vert = np.arange(n)
+print(get_cut_idx_arr(vert, n))

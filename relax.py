@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Optional
 from enum import Enum, auto
 from uuid import uuid4
+from time import perf_counter_ns
 
 import numpy as np
 import gurobipy as gp
@@ -91,6 +92,34 @@ def get_cut_idx(vertex_i: int, n: int):
     return cut_idx
 
 
+def get_vert_indexes_for_cut(vertices: np.ndarray, n: int):
+    vertices_len = vertices.size
+    # each column is the vertex repeated
+    vertices_repeated = np.tile(vertices, (n - 1, 1))
+    # each column is the index from 0 to n-1
+    indexes_repeated = np.repeat(np.arange(n - 1), vertices_len).reshape((n - 1, vertices_len))
+    # boolean mask of elements where index is less than vertex
+    lt_mask = indexes_repeated < vertices_repeated
+    # boolean mask of where index is greater/equal than vertex
+    gt_mask = indexes_repeated >= vertices_repeated
+    # we add one to the ones that are greater or equal, so that vertex itself doesn't show up
+    # now each column is all the vertices not equal to the vertex of that column
+    indexes_repeated[gt_mask] += 1
+
+    return vertices_repeated, indexes_repeated, lt_mask, gt_mask
+
+
+def get_cut_idx_arr(vertices: np.ndarray, n: int):
+    """Vertices should be 1D array."""
+    vertices_repeated, indexes_repeated, lt_mask, gt_mask = get_vert_indexes_for_cut(vertices, n)
+
+    # we can now use edge_idx as before
+    vertices_repeated[gt_mask] = edge_idx(vertices_repeated[gt_mask], indexes_repeated[gt_mask], n)
+    vertices_repeated[lt_mask] = edge_idx(indexes_repeated[lt_mask], vertices_repeated[lt_mask], n)
+
+    return vertices_repeated
+
+
 def edge_idx_to_arc_idx(edge_idx_arr: np.ndarray):
     """indexes must be a 1D array"""
     num_edges = edge_idx_arr.size
@@ -134,12 +163,32 @@ def cut_in(vertex_i: int, n: int):
     return cut_in_arr
 
 
+def cut_out_arr(vertices: np.ndarray, n: int):
+    vertices_repeated, indexes_repeated, lt_mask, gt_mask = get_vert_indexes_for_cut(vertices, n)
+
+    # we can now use edge_idx as before
+    vertices_repeated[gt_mask] = edge_idx(vertices_repeated[gt_mask], indexes_repeated[gt_mask], n) * 2 + 1
+    vertices_repeated[lt_mask] = edge_idx(indexes_repeated[lt_mask], vertices_repeated[lt_mask], n) * 2
+
+    return vertices_repeated
+
+
+def cut_in_arr(vertices: np.ndarray, n: int):
+    vertices_repeated, indexes_repeated, lt_mask, gt_mask = get_vert_indexes_for_cut(vertices, n)
+
+    # we can now use edge_idx as before
+    vertices_repeated[gt_mask] = edge_idx(vertices_repeated[gt_mask], indexes_repeated[gt_mask], n) * 2
+    vertices_repeated[lt_mask] = edge_idx(indexes_repeated[lt_mask], vertices_repeated[lt_mask], n) * 2 + 1
+
+    return vertices_repeated
+
+
 def get_edge_tpls_arr(n: int):
     tpls = []
     index = 0
     for i in range(n):
         for j in range(i + 1, n):
-            tpls.append((i, j, 0))
+            tpls.append((i, j, 0.0))
 
             index += 1
 
@@ -167,6 +216,8 @@ def partition_to_edge_idx(n: int, partition: tuple[list, list]):
 
 
 def extended_formulation(n: int, graph_l: np.ndarray):
+    print("Building extended formulation...")
+    start_build = perf_counter_ns()
     model = gp.Model("extended")
     model.setParam('LogToConsole', 0)
     m_edges = (n * (n - 1)) // 2
@@ -184,59 +235,73 @@ def extended_formulation(n: int, graph_l: np.ndarray):
     z = (char_vec * graph_l).sum()
     model.setObjective(z, gp.GRB.MINIMIZE)
 
-    cut_out_r = cut_out(0, n)
-    cut_in_r = cut_in(0, n)
+    # cut_out_r = cut_out(0, n)
+    # cut_in_r = cut_in(0, n)
+    build_i = 0
+    # each column is all the vertices other than the vertex corresponding to column
+    # so (n-1), n array
+    cut_arr = get_cut_idx_arr(np.arange(n), n)
+    repeated_vars = char_vec[cut_arr].reshape((n - 1, n))
+    model.addConstr(repeated_vars.sum(axis=0) == 2, name=f"x(delta(v))==2")
+    # we take transpose so we can easily access the rows
+    cuts_in = cut_in_arr(np.arange(0, n), n).T
+    cuts_out = cut_out_arr(np.arange(0, n), n).T
 
-    for v in range(0, n):
-        cut_idx = get_cut_idx(v, n)
-        cut_char: gp.MVar = char_vec[cut_idx]
-        model.addConstr(cut_char.sum() == 2, name=f"x(delta({v}))==2")
+    cut_in_r = cuts_in[0]
+    cut_out_r = cuts_out[0]
+    fs_r_out: gp.MVar = flow[:, cut_out_r]
+    fs_r_in: gp.MVar = flow[:, cut_in_r]
+    model.addConstr(fs_r_out.sum(axis=1) - fs_r_in.sum(axis=1) >= 2, name=f"f_s(delta_out(r))-f_s(delta_in(r))>=2")
 
-        # skip r
-        if v == 0:
-            continue
+    # for v in range(n):
+    #     print(f"in i {cuts_in[v]}")
+    #     print(f"in {cut_in(v, n)}")
+    #
+    #     print(f"out i {cuts_out[v]}")
+    #     print(f"out {cut_in(v, n)}")
 
-        s = v
+    for s in range(1, n):
         f_s: gp.MVar = flow[s - 1]
-        fs_r_out: gp.MVar = f_s[cut_out_r]
-        fs_r_in: gp.MVar = f_s[cut_in_r]
-        model.addConstr(fs_r_out.sum() - fs_r_in.sum() >= 2, name=f"f_{s}(delta_out(r))-f_{s}(delta_in(r))>=2")
-
         for other_v in range(0, n):
             # skip r and s
             if other_v == 0 or other_v == s:
                 continue
 
-            cut_out_v = cut_out(other_v, n)
-            cut_in_v = cut_in(other_v, n)
+            cut_out_v = cuts_out[other_v]
+            cut_in_v = cuts_in[other_v]
+            # cut_out_v = cut_out(other_v, n)
+            # cut_in_v = cut_in(other_v, n)
 
             fs_v_out: gp.MVar = f_s[cut_out_v]
             fs_v_in: gp.MVar = f_s[cut_in_v]
 
             model.addConstr(fs_v_out.sum() - fs_v_in.sum() == 0,
                             name=f"f_{s}(delta_out({other_v}))-f_{s}(delta_in({other_v}))==0")
-
-        for m in range(m_edges):
-            x_edge: gp.MVar = char_vec[m]
-            f_s_arc_1: gp.MVar = f_s[m * 2]
-            f_s_arc_2: gp.MVar = f_s[m * 2 + 1]
-
-            model.addConstr(f_s_arc_1 - x_edge <= 0, name=f"f_{s}(arc {m * 2})<=x({m})")
-            model.addConstr(f_s_arc_2 - x_edge <= 0, name=f"f_{s}(arc {m * 2 + 1})<=x({m})")
-
+        # we make sure we get arrays correspond to the right index of the char. vector
+        arcs_one_direction = np.arange(m_edges) * 2
+        arcs_other_direction = np.arange(m_edges) * 2 + 1
+        model.addConstr(f_s[arcs_one_direction] - char_vec <= 0, name=f"f_1")
+        model.addConstr(f_s[arcs_other_direction] - char_vec <= 0, name=f"f_2")
+    model.update()
+    build_time = (perf_counter_ns() - start_build) / 1e9
+    print(f"Took {build_time} s.")
     return TSPModel(model, n, Formulation.EXTENDED)
 
 
 def cutting_plane_model(n: int, graph_l: np.ndarray):
+    print("Setting up cutting plane model...")
+    start_build = perf_counter_ns()
     model = gp.Model("cutting plane")
     model.setParam('LogToConsole', 0)
     m_edges = (n * (n - 1)) // 2
 
-    char_vec: gp.MVar = model.addMVar(shape=(m_edges,), lb=0, ub=1, name='char_')
+    char_vec: gp.MVar = model.addMVar(shape=(m_edges,), lb=0, name='char_')
 
     z = (char_vec * graph_l).sum()
     model.setObjective(z, gp.GRB.MINIMIZE)
-
+    model.update()
+    build_time = (perf_counter_ns() - start_build) / 1e9
+    print(f"Took {build_time} s.")
     return TSPModel(model, n, Formulation.CUTTING_PLANE, True)
 
 
@@ -259,7 +324,10 @@ class TSPModel:
         self.n = n
 
     def optimize(self):
+        start_opt = perf_counter_ns()
         if self.formulation == Formulation.EXTENDED:
+            relaxed_text = "relaxed " if self.is_relaxed else ""
+            print(f"Optimizing {relaxed_text}extended formulation...")
             self.model.optimize()
             obj_value = self.model.ObjVal
             if self.is_relaxed:
@@ -267,8 +335,11 @@ class TSPModel:
             else:
                 print(f"integer optimal: {int(obj_value)}")
         else:
+            print("Optimizing cutting plane relaxation...")
             obj_value = optimize_cut_model(self)
             print(f"cutting plane relaxation: {obj_value}")
+        opt_time = (perf_counter_ns() - start_opt) / 1e9
+        print(f"Optimizing took {opt_time} s.")
 
     def relax(self):
         self.model.update()
@@ -307,7 +378,20 @@ class TSPModel:
 
         return char_vec, x_values
 
-def compute_min_cut(x_values: np.ndarray, n: int, base_graph: nx.Graph, edge_tuples_arr: np.ndarray) -> tuple[int, np.ndarray]:
+
+# EDGE_24 = get_edge_names(24)
+#
+# def edge_name_str(x_values):
+#     epsilon = 0.0001
+#     print("Path:")
+#     for e_i in range(x_values.size):
+#         x_val = x_values[e_i]
+#         if x_val > epsilon:
+#             add_value = f" with value {x_val}"
+#             print(f"\tedge {EDGE_24[e_i]} in solution{add_value}")
+
+def compute_min_cut(x_values: np.ndarray, n: int, base_graph: nx.Graph, edge_tuples_arr: np.ndarray) -> tuple[
+    int, np.ndarray]:
     """Compute min cut using Stoer–Wagner algorithm using Networkx. x_values should be 1D array with our edge
     index convention. edge_tuples_arr should be of the same length, but here each element is a 3-element array
     (so an m*3 array) that is (i, j, w) with i the lower vertex index, j the higher and w to be used for weight."""
@@ -320,20 +404,19 @@ def compute_min_cut(x_values: np.ndarray, n: int, base_graph: nx.Graph, edge_tup
 
     cut_value, partition = nx.stoer_wagner(weighted_graph)
     cut_edges = partition_to_edge_idx(n, partition)
-
+    # edge_name = edge_name_str(x_values)
     return cut_value, cut_edges
 
 
-def separation(n: int, char_vec: gp.MVar, x_values: np.ndarray, model: gp.Model, base_graph: nx.Graph, edge_tuples_arr: np.ndarray) -> bool:
+def separation(n: int, char_vec: gp.MVar, x_values: np.ndarray, model: gp.Model, base_graph: nx.Graph,
+               edge_tuples_arr: np.ndarray) -> bool:
     """Tests whether x is in P_subtour, if not it adds the inequality to the model"""
     # based on bounds we put in model we assume x >= 0
     epsilon = 0.0001
 
     cstrs = model.getConstrs()
     num_cstr = len(cstrs)
-    print(num_cstr)
-    if num_cstr > 3000:
-        print()
+    # print(num_cstr)
 
     for v in range(n):
         edges = get_cut_idx(v, n)
@@ -343,7 +426,6 @@ def separation(n: int, char_vec: gp.MVar, x_values: np.ndarray, model: gp.Model,
             return False
 
     cut_weight, min_cut_edges = compute_min_cut(x_values, n, base_graph, edge_tuples_arr)
-
     if cut_weight < 2:
         subtour_vars = char_vec[min_cut_edges]
         model.addConstr(subtour_vars.sum() >= 2, name=f"x(delta(cut_{uuid4()}))>=2")
@@ -359,7 +441,6 @@ def optimize_cut_model(m: TSPModel):
 
     edge_tpls_arr = get_edge_tpls_arr(m.n)
     base_graph = nx.complete_graph(m.n)
-
     while invalid:
         if i > max_i:
             raise ValueError("Model could not be solved in time!")
@@ -376,32 +457,26 @@ def optimize_cut_model(m: TSPModel):
 
 
 def run():
-    # inst_path = get_inst_path()
-    inst_path = Path('tsp/burma14.dat')
+    inst_path = get_inst_path()
+    # inst_path = Path('tsp/bays29.dat')
 
     n, graph_l = parse_instance(inst_path)
 
+    # make empty model to startup Gurobi
+    _ = gp.Model()
+
     cut_model = cutting_plane_model(n, graph_l)
     cut_model.optimize()
-    char_vec, x_values = cut_model.print_sol()
+    # cut_model.print_sol()
 
-    # epsilon = 0.0001
-    # for v in range(n):
-    #     edges = get_cut_idx(v, n)
-    #     if np.abs(np.sum(x_values[edges]) - 2) > epsilon:
-    #         edge_vars = char_vec[edges]
+    model = extended_formulation(n, graph_l)
 
-    # model = extended_formulation(n, graph_l)
-
-    # model.optimize()
+    model.optimize()
     # model.print_sol()
 
-    # m_relax = model.relax()
-    # m_relax.optimize()
+    m_relax = model.relax()
+    m_relax.optimize()
     # m_relax.print_sol()
-
-    # for i, x in enumerate(relax_model.getVars()):
-    #     print(x)
 
     # we fix r is the first vertex
 
