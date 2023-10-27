@@ -65,33 +65,6 @@ def edge_idx(lower_i, higher_j, n: int):
     return lower_i * (2 * n - lower_i - 1) // 2 + (higher_j - lower_i - 1)
 
 
-def vertex_from_edge(edge: int):
-    # i, j
-    # I = i * (2*n - i - 1) / 2 + (j - i - 1)
-    return
-
-
-def get_lt_and_gt_cut(vertex_i: int, n: int):
-    # index is based on the lower index vertex
-    lt_idx = np.arange(0, vertex_i, dtype=int)
-    gt_idx = np.arange(vertex_i + 1, n, dtype=int)
-
-    less_idx = edge_idx(lt_idx, vertex_i, n)
-    more_idx = edge_idx(vertex_i, gt_idx, n)
-
-    return less_idx, more_idx
-
-
-def get_cut_idx(vertex_i: int, n: int):
-    less_idx, more_idx = get_lt_and_gt_cut(vertex_i, n)
-
-    cut_idx = np.zeros(n - 1, dtype=int)
-    cut_idx[:vertex_i] = less_idx
-    cut_idx[vertex_i:] = more_idx
-
-    return cut_idx
-
-
 def get_vert_indexes_for_cut(vertices: np.ndarray, n: int):
     vertices_len = vertices.size
     # each column is the vertex repeated
@@ -118,49 +91,6 @@ def get_cut_idx_arr(vertices: np.ndarray, n: int):
     vertices_repeated[lt_mask] = edge_idx(indexes_repeated[lt_mask], vertices_repeated[lt_mask], n)
 
     return vertices_repeated
-
-
-def edge_idx_to_arc_idx(edge_idx_arr: np.ndarray):
-    """indexes must be a 1D array"""
-    num_edges = edge_idx_arr.size
-    arc_idx_arr = np.zeros(2 * num_edges, dtype=int)
-    split_indexes = np.arange(start=0, stop=num_edges, dtype=int)
-    base_idx = edge_idx_arr * 2
-    reverse_idx = base_idx + 1
-    arc_idx_arr[split_indexes] = base_idx
-    arc_idx_arr[split_indexes + 1] = reverse_idx
-
-    return arc_idx_arr
-
-
-def cut_out(vertex_i: int, n: int):
-    # (u, v) means u is tail
-    # so cut_out is all (u, v) for v not equal to u
-    less_idx, more_idx = get_lt_and_gt_cut(vertex_i, n)
-
-    arc_cut_size = (n - 1)
-    cut_out_arr = np.zeros(arc_cut_size, dtype=int)
-    # for edges where other vertex has lower index, we need the second arc, because vertex_i must be first
-    cut_out_arr[:vertex_i] = less_idx * 2 + 1
-    # for edges where vertex_i has lower index, we need the first arc, because vertex_i must be first
-    cut_out_arr[vertex_i:] = more_idx * 2
-
-    return cut_out_arr
-
-
-def cut_in(vertex_i: int, n: int):
-    # (u, v) means v is head
-    # so cut_in is all (u, v) for u not equal to v
-    less_idx, more_idx = get_lt_and_gt_cut(vertex_i, n)
-
-    arc_cut_size = (n - 1)
-    cut_in_arr = np.zeros(arc_cut_size, dtype=int)
-    # for edges where other vertex has lower index, we need the first, because vertex_i must be second
-    cut_in_arr[:vertex_i] = less_idx * 2
-    # for edges where vertex_i has lower index, we need the second arc, because vertex_i must be second
-    cut_in_arr[vertex_i:] = more_idx * 2 + 1
-
-    return cut_in_arr
 
 
 def cut_out_arr(vertices: np.ndarray, n: int):
@@ -331,25 +261,19 @@ class TSPModel:
             self.model.optimize()
             obj_value = self.model.ObjVal
             if self.is_relaxed:
-                print(f"extended relaxation: {obj_value}")
+                print(f"\t- extended relaxation: {obj_value}")
             else:
-                print(f"integer optimal: {int(obj_value)}")
+                print(f"\t- integer optimal: {int(obj_value)}")
         else:
             print("Optimizing cutting plane relaxation...")
             obj_value = optimize_cut_model(self)
-            print(f"cutting plane relaxation: {obj_value}")
+            print(f"\t- cutting plane relaxation: {obj_value}")
         opt_time = (perf_counter_ns() - start_opt) / 1e9
         print(f"Optimizing took {opt_time} s.")
 
     def relax(self):
         self.model.update()
         relax_model: gp.Model = self.model.copy().relax()
-        # model_vars = relax_model.getVars()
-        # for v in model_vars:
-        #     print(v.VType)
-        # model_cstrs = relax_model.getConstrs()
-        # for c in model_cstrs:
-        #     print(c.ConstrName)
         self.model = relax_model
         self.is_relaxed = True
         return self
@@ -379,17 +303,6 @@ class TSPModel:
         return char_vec, x_values
 
 
-# EDGE_24 = get_edge_names(24)
-#
-# def edge_name_str(x_values):
-#     epsilon = 0.0001
-#     print("Path:")
-#     for e_i in range(x_values.size):
-#         x_val = x_values[e_i]
-#         if x_val > epsilon:
-#             add_value = f" with value {x_val}"
-#             print(f"\tedge {EDGE_24[e_i]} in solution{add_value}")
-
 def compute_min_cut(x_values: np.ndarray, n: int, base_graph: nx.Graph, edge_tuples_arr: np.ndarray) -> tuple[
     int, np.ndarray]:
     """Compute min cut using Stoer–Wagner algorithm using Networkx. x_values should be 1D array with our edge
@@ -414,12 +327,10 @@ def separation(n: int, char_vec: gp.MVar, x_values: np.ndarray, model: gp.Model,
     # based on bounds we put in model we assume x >= 0
     epsilon = 0.0001
 
-    cstrs = model.getConstrs()
-    num_cstr = len(cstrs)
-    # print(num_cstr)
-
+    cuts = get_cut_idx_arr(np.arange(n), n)
     for v in range(n):
-        edges = get_cut_idx(v, n)
+        # the columns are the vertices
+        edges = cuts[:, v]
         if np.abs(np.sum(x_values[edges]) - 2) > epsilon:
             edge_vars = char_vec[edges]
             model.addConstr(edge_vars.sum() == 2, name=f"x(delta({v}))==2")
@@ -443,7 +354,7 @@ def optimize_cut_model(m: TSPModel):
     base_graph = nx.complete_graph(m.n)
     while invalid:
         if i > max_i:
-            raise ValueError("Model could not be solved in time!")
+            print("Taking a long time...")
 
         m.model.optimize()
         char_vec, x_values = m.char_vec_values()
