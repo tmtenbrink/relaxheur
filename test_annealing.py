@@ -16,7 +16,7 @@ m_edges = (n * (n - 1)) // 2
 
 def length_tour(graph, tour):
     # kan sneller
-    length = 0  # graph[tour[-1]][tour[0]]
+    length = graph[tour[-1]][tour[0]]
     for i in range(len(tour) - 1):
         length += graph[tour[i]][tour[i + 1]]
 
