@@ -2,7 +2,6 @@ import argparse
 from pathlib import Path
 from typing import Optional
 from enum import Enum, auto
-from uuid import uuid4
 from time import perf_counter_ns
 
 import numpy as np
@@ -206,6 +205,8 @@ def cutting_plane_model(n: int, graph_l: np.ndarray):
     print("Setting up cutting plane model...")
     start_build = perf_counter_ns()
     model = gp.Model("cutting plane")
+    # set to dual simplex
+    model.setParam("Method", 1)
     model.setParam("LogToConsole", 0)
     m_edges = (n * (n - 1)) // 2
 
@@ -276,7 +277,7 @@ class TSPModel:
         char_vec, x_values = self.char_vec_values()
         edge_names = get_edge_names(self.n)
 
-        epsilon = 0.0001
+        epsilon = 0.0000001
         print("Path:")
         for e_i in range(x_values.size):
             x_val = x_values[e_i]
@@ -304,29 +305,31 @@ def adjacency_matrix_from_vector(x_values: np.ndarray, n: int):
 
 
 def sw_minimum_cut_phase(graph, a):
-    n = len(graph)
+    graph_n = len(graph)
     A = [a]
-    w_list = []
+    cut_edges = []
+    max_cut_weight = -1
 
-    while len(A) < n:
+    while len(A) < graph_n:
         max_cut_weight = -1
+        u = 0
 
-        for v in range(n):
+        for v in range(graph_n):
             if v not in A:
                 cut_weight = sum(graph[v][w][0] for w in A)
                 if cut_weight > max_cut_weight:
                     max_cut_weight = cut_weight
                     u = v
-                    w_list = []
+                    cut_edges = []
                     for w in A:
-                        w_list += graph[v][w][1]
+                        cut_edges += graph[v][w][1]
 
         A.append(u)
 
     s = min(A[-1], A[-2])
     t = max(A[-1], A[-2])
 
-    return s, t, cut_weight, w_list
+    return s, t, max_cut_weight, cut_edges
 
 
 def sw_minimum_cut(graph):
@@ -340,14 +343,13 @@ def sw_minimum_cut(graph):
 
     while n > 1:
         a = 0  # Any vertex from V
-        s, t, cut_weight, w_list = sw_minimum_cut_phase(graph[:n][:n], a)
+        s, t, cut_weight, cut_edges = sw_minimum_cut_phase(graph[:n][:n], a)
         if cut_weight < min_cut:
             min_cut = cut_weight
-            best_edge_list = w_list
+            best_edge_list = cut_edges
 
         # Merge vertices s and t
         contractions.append((s, t))
-        # print(s, t, cut_weight)
         for i in range(n):
             if i != t:
                 graph[s][i] = [
@@ -369,12 +371,12 @@ def sw_minimum_cut(graph):
 
 def compute_min_cut(x_values: np.ndarray, n: int) -> tuple[int, np.ndarray]:
     """Compute min cut using Stoer–Wagner algorithm. x_values should be 1D array with our edge
-    index convention. edge_tuples_arr should be of the same length, but here each element is a 3-element array
-    (so an m*3 array) that is (i, j, w) with i the lower vertex index, j the higher and w to be used for weight.
+    index convention.
     """
-
+    # we compute an adjacency matrix to more easily perform the stoer-wagner algorithm
     graph = adjacency_matrix_from_vector(x_values, n)
     min_cut, best_edge_list = sw_minimum_cut(graph)
+    # we turn the list of edges back into array using our edge index convention
     cut_edges = np.array([edge_idx(e[0], e[1], n) for e in best_edge_list])
 
     return min_cut, cut_edges
@@ -391,12 +393,14 @@ def separation(
     than 2, we know that all cuts are larger than 2.
 
     It is easy to see that constraints 1 and 2 are checked in polynomial time. Constraint 3
-    has exponentially many inequalitites, but can be checked in polynomial time since the
-    min-cut can be found in polynomial time by the Stoer-Wagner algorithm.
+    has exponentially many inequalities (as there are exponentially many U), but can be checked
+    in polynomial time since the min-cut can be found in polynomial time by the Stoer-Wagner algorithm.
+
+    Therefore, our separation algorithm is polynomial time.
     """
 
     # based on bounds we put in model we assume x >= 0
-    epsilon = 0.0001
+    epsilon = 0.0000001
 
     cuts = get_cut_idx_arr(np.arange(n), n)
     for v in range(n):
@@ -410,7 +414,7 @@ def separation(
     cut_weight, min_cut_edges = compute_min_cut(x_values, n)
     if cut_weight < 2 - epsilon:
         subtour_vars = char_vec[min_cut_edges]
-        model.addConstr(subtour_vars.sum() >= 2, name=f"x(delta(cut_{uuid4()}))>=2")
+        model.addConstr(subtour_vars.sum() >= 2, name=f"x(delta(cut)>=2")
         return False
 
     return True
@@ -458,8 +462,5 @@ def run():
     # m_relax.print_sol()
 
 
-# Press the green button in the gutter to run the script.
 if __name__ == "__main__":
     run()
-
-# See PyCharm help at https://www.jetbrains.com/help/pycharm/
