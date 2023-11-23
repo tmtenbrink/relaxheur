@@ -56,12 +56,11 @@ def nearest_neighbor(graph):
 def simulated_annealing(graph, T, r, L=1000, max_no_improvement=1e9):
     S = nearest_neighbor(graph)  # set initial solution S to be greedy solution
     epsilon = 1e-6
-    no_improvement_count = 0
 
     while T > epsilon:  # while not frozen
+        no_improvement_count = 0
         for _ in range(L):
             if no_improvement_count >= max_no_improvement:
-                no_improvement_count = 0
                 break
             # Pick random S_new in neighborhood of S:
             # random start and end point sub-tour reversal
