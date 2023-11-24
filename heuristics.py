@@ -39,18 +39,31 @@ def length_tour(graph, tour):
     return length
 
 
-def nearest_neighbor(graph):
-    tour = [random.randrange(0, len(graph), 1)]  # Choose random starting node
-    for i in range(len(graph) - 1):
-        row = graph[tour[i]]
-        filtered_values = [d for d in row if d > 0 and row.index(d) not in tour]
-        min_distance = min(filtered_values)
-        next_node = row.index(min_distance)
-        tour.append(next_node)
+def nearest_neighbor(graph, max_retries=10):
+    for _ in range(max_retries):
+        tour = [random.randrange(0, len(graph), 1)]  # Choose random starting node
+        for i in range(len(graph) - 1):
+            row = graph[tour[i]]
+            filtered_values = [d for d in row if d > 0 and row.index(d) not in tour]
 
-    tour.append(tour[0])
+            if not filtered_values:
+                # If filtered_values is empty, start over with a new random starting node
+                break
+            else:
+                min_distance = min(filtered_values)
+                next_node = row.index(min_distance)
 
-    return tour
+            tour.append(next_node)
+
+        tour.append(tour[0])
+
+        # If the tour length is equal to the number of nodes, a valid tour is found
+        if len(tour) == len(graph) + 1:
+            return tour
+
+    # If no valid tour is found after the maximum number of retries, return None
+    print("No tour found")
+    return None
 
 
 def simulated_annealing(graph, T, r, L=1000, max_no_improvement=1e9):
