@@ -8,7 +8,7 @@ from typing import Literal, Optional, Union, overload
 from linkernighan import lin_kernighan
 
 
-def parse_line(ln: str, as_float = False) -> Union[list[float], list[int]]:
+def parse_line(ln: str, as_float=False) -> Union[list[float], list[int]]:
     convert = float if as_float else int
     return list(map(lambda i: convert(i), ln.rstrip().split(" ")))
 
@@ -27,12 +27,16 @@ def get_inst_path():
 def parse_as_adj_matrix(inst_path: Path, as_float: Literal[True]) -> list[list[float]]:
     ...
 
+
 @overload
 def parse_as_adj_matrix(inst_path: Path, as_float: Literal[False]) -> list[list[int]]:
     ...
 
+
 @overload
-def parse_as_adj_matrix(inst_path: Path,) -> list[list[int]]:
+def parse_as_adj_matrix(
+    inst_path: Path,
+) -> list[list[int]]:
     ...
 
 
@@ -56,31 +60,21 @@ def length_tour(graph, tour):
     return length
 
 
-def nearest_neighbor(graph, max_retries=10):
-    for _ in range(max_retries):
-        tour = [random.randrange(0, len(graph), 1)]  # Choose random starting node
-        for i in range(len(graph) - 1):
-            row = graph[tour[i]]
-            filtered_values = [d for d in row if d > 0 and row.index(d) not in tour]
+def nearest_neighbor(graph, starting_node=None):
+    if starting_node == None:
+        starting_node = random.randrange(0, len(graph), 1)
+    tour = [starting_node]
+    for i in range(len(graph) - 1):
+        row = graph[tour[i]]
+        row_new = [0 if i in tour else val for i, val in enumerate(row)]
+        filtered_values = [d for d in row_new if d > 0]
+        min_distance = min(filtered_values)
+        next_node = row_new.index(min_distance)
+        tour.append(next_node)
 
-            if not filtered_values:
-                # If filtered_values is empty, start over with a new random starting node
-                break
-            else:
-                min_distance = min(filtered_values)
-                next_node = row.index(min_distance)
+    tour.append(tour[starting_node])
 
-            tour.append(next_node)
-
-        tour.append(tour[0])
-
-        # If the tour length is equal to the number of nodes, a valid tour is found
-        if len(tour) == len(graph) + 1:
-            return tour
-
-    # If no valid tour is found after the maximum number of retries, return None
-    print("No tour found")
-    return None
+    return tour
 
 
 def simulated_annealing(graph, T, r, L=1000, max_no_improvement=1e9):
@@ -115,8 +109,8 @@ def simulated_annealing(graph, T, r, L=1000, max_no_improvement=1e9):
 
 def run():
     # inst_path = get_inst_path()
-    inst_path = Path("tsp/burma14.dat")
-    # inst_path = Path("tsp/gr48.dat")
+    # inst_path = Path("tsp/burma14.dat")
+    inst_path = Path("tsp/gr48.dat")
 
     graph_l = parse_as_adj_matrix(inst_path)
 

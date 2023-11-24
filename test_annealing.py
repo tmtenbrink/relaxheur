@@ -42,7 +42,7 @@ def length_tour(graph, tour):
     return length
 
 
-def nearest_neighbor2(graph, starting_node=0):
+def nearest_neighbor(graph, starting_node=0):
     tour = [starting_node]
     for i in range(len(graph) - 1):
         row = graph[tour[i]]
@@ -51,14 +51,48 @@ def nearest_neighbor2(graph, starting_node=0):
         next_node = row.index(min_distance)
         tour.append(next_node)
 
-    tour.append(tour[0])
+    tour.append(tour[starting_node])
 
     return tour
 
 
-def nearest_neighbor(graph, max_retries=10):
+def nearest_neighbor_test1(graph, starting_node=None):
+    if starting_node == None:
+        starting_node = random.randrange(0, len(graph), 1)
+    tour = [starting_node]
+    for i in range(len(graph) - 1):
+        row = graph[tour[i]]
+        filtered_values = [d for d in row if d > 0 and row.index(d) not in tour]
+        min_distance = min(filtered_values)
+        next_node = row.index(min_distance)
+        tour.append(next_node)
+
+    tour.append(tour[starting_node])
+
+    return tour
+
+
+def nearest_neighbor_test2(graph, starting_node=None):
+    if starting_node == None:
+        starting_node = random.randrange(0, len(graph), 1)
+    tour = [starting_node]
+    for i in range(len(graph) - 1):
+        row = graph[tour[i]]
+        row_new = [0 if i in tour else val for i, val in enumerate(row)]
+        filtered_values = [d for d in row_new if d > 0]
+        min_distance = min(filtered_values)
+        next_node = row_new.index(min_distance)
+        tour.append(next_node)
+
+    tour.append(tour[starting_node])
+
+    return tour
+
+
+def nearest_neighbor2(graph, max_retries=10):
     for _ in range(max_retries):
-        tour = [random.randrange(0, len(graph), 1)]  # Choose random starting node
+        starting_node = random.randrange(0, len(graph), 1)
+        tour = [starting_node]  # Choose random starting node
         for i in range(len(graph) - 1):
             row = graph[tour[i]]
             filtered_values = [d for d in row if d > 0 and row.index(d) not in tour]
@@ -72,7 +106,7 @@ def nearest_neighbor(graph, max_retries=10):
 
             tour.append(next_node)
 
-        tour.append(tour[0])
+        tour.append(tour[starting_node])
 
         # If the tour length is equal to the number of nodes, a valid tour is found
         if len(tour) == len(graph) + 1:
@@ -121,18 +155,25 @@ def run():
 
     n, graph_l = parse_as_adj_matrix(inst_path)
 
+    fail = np.zeros(n)
+    check = np.zeros(n)
+
     for i in range(n):
-        greedy_tour = nearest_neighbor(graph_l)
-        print(i, length_tour(graph_l, greedy_tour))
+        greedy_tour1 = nearest_neighbor_test2(graph_l, i)
+        print(i, length_tour(graph_l, greedy_tour1))
+        try:
+            greedy_tour2 = nearest_neighbor_test1(graph_l, i)
+            check[i] = greedy_tour1 == greedy_tour2
+            # print(length_tour(graph_l, greedy_tour))
+        except:
+            check[i] = 1
+            # print("fail")
+
+    print(check)
 
     # annealing_tour = simulated_annealing(graph_l, T=100, r=0.9)
     # print(annealing_tour)
     # print(length_tour(graph_l, annealing_tour))
-    lst = np.zeros(n * n)
-    for i in range(n * n):
-        lst[i] = random.randrange(0, n, 1)
-
-    print(max(lst))
 
 
 if __name__ == "__main__":
