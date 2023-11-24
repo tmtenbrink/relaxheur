@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 import random
-from typing import Any, Optional, Union
+from typing import Any, Iterable, Optional, Union
 
 def dict_tour(tour: list[int]) -> dict[int, tuple[int, int]]:
     # adjacent edges in the tour
@@ -22,15 +22,26 @@ def dict_tour(tour: list[int]) -> dict[int, tuple[int, int]]:
     return d
 
 def random_tour(n: int) -> list[int]:
-    randoms = [(random.random(), i) for i in range(n)]
+    return shuffle_iter(range(n))
+
+
+def shuffle_iter(itrble: Iterable[int]) -> list[int]:
+    """Returns a shuffled copy of the iterable as a list."""
+    randoms = [(random.random(), i) for i in itrble]
     randoms.sort(key=lambda l: l[0])
-    tour = list(map(lambda r: r[1], randoms))
-    return tour
+    shuffled = list(map(lambda r: r[1], randoms))
+    return shuffled
 
 
 Edge = tuple[int, int]
 VertTourNghbs = dict[int, tuple[int, int]]
 VertNghbs = dict[int, set[int]]
+
+UsedEdges = dict[int, set[Edge]]
+SelectedEdges = dict[int, Edge]
+
+# current_graph, partial gain, current tour
+IterState = tuple[VertNghbs, float]
 
 
 def pick_x0(d_tour: VertTourNghbs, t0: int, costs: list[list[float]]):
@@ -62,18 +73,6 @@ def pick_y0(n: int, d_tour: VertTourNghbs, t0: int, t1: int, costs: list[list[fl
 
 
 
-# def tour_to_edge_matrix(n: int, tour: list[int]) -> list[list[float]]:
-#     tour_edge_matrix = [[0 for _ in range(n)] for _ in range(n)]
-#     for i in range(len(tour)):
-#         tour_edge_matrix[tour[i]][tour[i+1]] = 1
-#         tour_edge_matrix[tour[i+1]][tour[i]] = 1
-    
-#     tour_edge_matrix[tour[0]][tour[-1]] = 1
-#     tour_edge_matrix[tour[-1]][tour[0]] = 1
-
-#     return tour_edge_matrix
-
-
 def d_tour_to_node_adj_dict(n: int, d_tour: VertTourNghbs) -> VertNghbs:
     node_edges = dict[int, set[int]]()
     
@@ -93,7 +92,7 @@ def edge_eq(e1: Edge, e2: Edge) -> bool:
     return e1 == e2 or (e1[1], e1[0]) == e2
 
 
-def edge_in_edge_list(e: Edge, edge_list: Union[list[Edge], set[Edge]]) -> bool:
+def edge_in_edge_list(e: Edge, edge_list: Iterable[Edge]) -> bool:
     return e in edge_list or (e[1], e[0]) in edge_list
 
 
@@ -105,15 +104,18 @@ def copy_node_edges(node_edges: VertNghbs) -> VertNghbs:
     return node_edge_copy
 
 
-def exchange_edges(node_edges: VertNghbs, x_remove: Edge, y_repl: Edge, copy=True) -> VertNghbs:
+def exchange_edges(node_edges: VertNghbs, x_remove: Edge, y_repl: Edge, copy=True, require_existence=True) -> VertNghbs:
     if copy:
         node_edges = copy_node_edges(node_edges)
     t_x0, t_x1 = x_remove
     t_y0, t_y1 = y_repl
 
-
-    node_edges[t_x0].remove(t_x1)
-    node_edges[t_x1].remove(t_x0)
+    edges_x0 = node_edges[t_x0]
+    edges_x1 = node_edges[t_x1]
+    if require_existence or t_x1 in edges_x0:
+        edges_x0.remove(t_x1)
+    if require_existence or t_x0 in edges_x1:
+        edges_x1.remove(t_x0)
 
     node_edges[t_y0].add(t_y1)
     node_edges[t_y1].add(t_y0)
@@ -121,158 +123,137 @@ def exchange_edges(node_edges: VertNghbs, x_remove: Edge, y_repl: Edge, copy=Tru
     return node_edges
 
 
-def try_is_tour(n: int, tour_n_a_dict: VertNghbs, x_remove: Edge, y_repl: Edge) -> tuple[bool, list[int], VertNghbs]:
-    maybe_tour_n_a_dict = exchange_edges(tour_n_a_dict, x_remove, y_repl)
-    is_tour, maybe_tour = is_node_edges_tour(n, tour_n_a_dict)
-    return is_tour, maybe_tour, maybe_tour_n_a_dict
-
-
 def vert_ngbhs_to_tour(v_n: VertNghbs) -> list[int]:
     if len(v_n) == 0:
         return []
     current_node = next(iter(v_n))
     seen_nodes = {current_node}
+    seen_order = [current_node]
     while True:
         adjacent = v_n[current_node]
         if len(adjacent) != 2:
             # not a valid tour
             return []
         not_seen = None
-        for a in adjacent:
-            if a not in seen_nodes:
-                not_seen = a
+        for adj in adjacent:
+            if adj not in seen_nodes:
+                not_seen = adj
                 break
         if not_seen is None:
             break
-        
+
         current_node = not_seen
         seen_nodes.add(not_seen)
+        seen_order.append(not_seen)
 
-    return list(seen_nodes)
+    return seen_order
+
+def try_is_tour(n: int, tour_n_a_dict: VertNghbs, x_remove: Edge, y_repl: Edge) -> tuple[bool, list[int]]:
+    maybe_tour_n_a_dict = exchange_edges(tour_n_a_dict, x_remove, y_repl, require_existence=False)
+    is_tour, maybe_tour = is_node_edges_tour(n, maybe_tour_n_a_dict)
+    return is_tour, maybe_tour
+
 
 @dataclass
 class TourState:
     n: int
-    t_base: int
+    tbase: int
     tour: list[int]
     d_tour: VertTourNghbs
+    tgraph: VertNghbs
     costs: list[list[float]]
+    iter: dict[int, IterState]
 
 
-
-def pick_xi(n: int, t_start: int, t_base: int, d_tour: VertTourNghbs, node_edges: VertNghbs, prev_ys: list[Edge]) -> Optional[tuple[Edge, Edge, list[int], VertNghbs]]:
-    # node edges should have already removed x0, added y0, ... added yi-1
-    t2i1_possible = d_tour[t_start]
-    xi_0 = (t_start, t2i1_possible[0])
-    xi_1 = (t_start, t2i1_possible[1])
-    joined_0 = (t_base, t2i1_possible[0])
-    joined_1 = (t_base, t2i1_possible[1])
-
-    is_0_tour, maybe_tour, maybe_tour_n_a_dict = try_is_tour(n, node_edges, xi_0, joined_0)
-
-    if not is_0_tour or edge_in_edge_list(xi_0, prev_ys):
-        is_1_tour, maybe_tour, maybe_tour_n_a_dict = try_is_tour(n, node_edges, xi_1, joined_1)
-        if not is_1_tour or edge_in_edge_list(xi_1, prev_ys):
-            return None
-        xi = xi_1
-        joined = joined_1
-        tour = maybe_tour
-        tour_n_a_dict = maybe_tour_n_a_dict
-    else:
-        xi = xi_0
-        joined = joined_0
-        tour = maybe_tour
-        tour_n_a_dict = maybe_tour_n_a_dict
-
-    # TODO is this guaranteed?
-    # if xi in prev_ys:
-    #     return None
-    
-    return xi, joined, tour, tour_n_a_dict
+XResult = Optional[tuple[Edge, list[int], Edge]]
 
 
-def pick_yi_xi1(n: int, t2i1: int, t0: int, xi: Edge, partial_gain: float, d_tour: VertTourNghbs, tour_n_a_dict: VertNghbs, costs: list[list[float]], prev_xs: list[Edge], prev_ys: list[Edge]) -> Optional[tuple[Edge, Edge, Edge, float, list[int], VertNghbs]]:
-    tour_nghbs = d_tour[t2i1]
-
-    possible_yi = [(t2i1, i) for i in range(n) if i != t2i1 and i not in tour_nghbs]
-
-    for maybe_yi in possible_yi:
-
-        gain_i = exchange_gain(xi, maybe_yi, costs)
-        if partial_gain + gain_i > 0:
-            maybe_yi_rev = (maybe_yi[1], maybe_yi[0])
-            if edge_in_edge_list(maybe_yi, prev_xs) or edge_in_edge_list(maybe_yi_rev, prev_xs):
-                continue
-            t2i2 = maybe_yi[1]
-            updated_tour_n_a_dict = exchange_edges(tour_n_a_dict, xi, maybe_yi)
-            maybe_prev_ys = prev_ys.copy() + [maybe_yi]
-            maybe_xi1 = pick_xi(n, t2i2, t0, d_tour, updated_tour_n_a_dict, maybe_prev_ys)
-            if maybe_xi1 is None:
-                continue
-            xi1, joined_i1, new_tour, updated_tour_n_a_dict = maybe_xi1
-            
-            possible_yi.remove(maybe_yi)
-            return maybe_yi, xi1, joined_i1, gain_i, new_tour, updated_tour_n_a_dict
-
-    return None
-    
-    
-
-# def tour_to_edges(tour: list[int]) -> list[tuple[int, int]]:
-#     edges = []
-#     for i in range(len(tour)):
-#         edges.append((tour[i], tour[i+1]))
-#     edges.append((tour[-1], tour[0]))
-
-#     return edges
-
-def next_t2i(i: int, t_chain: list[int]):
-    t_chain.append(0)      
-    t2i = t_chain[2*i]
-
-    return t2i, t_chain
-
-UsedEdges = dict[int, set[Edge]]
-SelectedEdges = dict[int, Edge]
-
-
-def next_x(i: int, used_x: UsedEdges, sel_y: SelectedEdges, cur_graph: VertNghbs, ts: TourState):
+def next_x(i: int, used_x: UsedEdges, sel_y: SelectedEdges, ts: TourState, tgraph: Optional[VertNghbs] = None) -> Optional[tuple[Edge, list[int], Edge]]:
     if i == 0:
-        t_start = ts.t_base
+        t_start = ts.tbase
+        cur_tgraph = ts.tgraph
     else:
         yim1 = sel_y[i-1]
         t_start = yim1[1]
+        if tgraph is None:
+            cur_tgraph, _ = ts.iter[i-1]
+        else:
+            cur_tgraph = tgraph
 
     base_nghbs = ts.d_tour[t_start]
     for nghb in base_nghbs:
         maybe_x = (t_start, nghb)
-        if edge_in_edge_list(maybe_x, used_x.get(0, [])):
-            continue
-        
-        if i >= 1:
-            joined = (ts.t_base, nghb)
-            is_tour, maybe_tour, updated_tgraph = try_is_tour(ts.n, cur_graph, maybe_x, joined)
 
+        # condition (a)
+        if i <= 1 and edge_in_edge_list(maybe_x, used_x.get(i, [])):
+            continue
+
+        if i >= 1:
+            # condition (b)
+            joined = (ts.tbase, nghb)
+            is_tour, maybe_tour = try_is_tour(ts.n, cur_tgraph, maybe_x, joined)
             if not is_tour:
                 continue
 
-            if edge_in_edge_list(maybe_x, list(sel_y.values())):
+            # condition (c)
+            if edge_in_edge_list(maybe_x, sel_y.values()):
                 continue
         else:
-            # no y_i to replace with
-            updated_tgraph = cur_graph
+            # dummies
             maybe_tour = ts.tour
+            joined = (0, 0)
 
-        return maybe_x, maybe_tour, updated_tgraph
+        return maybe_x, maybe_tour, joined
 
     return None
         
     
+
+def next_y(i: int, used_x: UsedEdges, used_y: UsedEdges, sel_x: SelectedEdges, sel_y: SelectedEdges,  ts: TourState) -> Optional[tuple[Edge, float, XResult]]:
+    if i == 0:
+        partial_gain_im1 = 0
+        cur_tgraph = ts.tgraph
+    else:
+        cur_tgraph, partial_gain_im1 = ts.iter[i-1]
     
+    xi = sel_x[i]
+    y_start = xi[1]
+    y_start_nghbs = ts.d_tour[y_start]
 
+    for node in range(ts.n):
+        maybe_yi = (y_start, node)
 
-def next_y(i: int, used_y: UsedEdges):
-    pass
+        # needs to be an edge outside of tour
+        if node == y_start or node in y_start_nghbs:
+            continue
+
+        # condition (a)
+        if i <= 1 and edge_in_edge_list(maybe_yi, used_y.get(i, [])):
+            continue
+        
+        # condition (b)
+        gain_i = exchange_gain(xi, maybe_yi, ts.costs)
+        if partial_gain_im1 + gain_i <= 0:
+            continue
+
+        if i >= 1:
+            # condition (c)
+            if edge_in_edge_list(maybe_yi, sel_x.values()):
+                continue
+
+            # condition (d)
+            sel_y[i] = maybe_yi
+            yi_tgraph = exchange_edges(cur_tgraph, xi, maybe_yi)
+
+            maybe_xi1_res = next_x(i+1, used_x, sel_y, ts, tgraph=yi_tgraph)
+            if maybe_xi1_res is None:
+                continue
+        else:
+            maybe_xi1_res = None
+
+        return maybe_yi, gain_i, maybe_xi1_res
+
+    return None
 
 
 def add_create_edge(i: int, dct: dict[int, set[Edge]], e: Edge):
@@ -282,19 +263,31 @@ def add_create_edge(i: int, dct: dict[int, set[Edge]], e: Edge):
         dct[i] = {e}
 
 
-def evaluate_x(i: int, used_x: UsedEdges, used_y: UsedEdges, sel_x: SelectedEdges, sel_y: SelectedEdges, cur_graph: VertNghbs, ts: TourState):
-    x_i_result = next_x(i, used_x, sel_y, cur_graph, ts)
-    if x_i_result is not None:
-        x_i, new_tour, updated_tgraph = x_i_result
-        # do check if better
-        # else
-        sel_x[i] = x_i
-        add_create_edge(i, used_x, x_i)
-        return evaluate_y(i, used_x, used_y, sel_x, sel_y)
+def evaluate_x(i: int, used_x: UsedEdges, used_y: UsedEdges, sel_x: SelectedEdges, sel_y: SelectedEdges, ts: TourState, xi_from_y: Optional[XResult] = None) -> Optional[tuple[list[int], float]]:
+    xi_result = next_x(i, used_x, sel_y, ts) if xi_from_y is None else xi_from_y
+    if xi_result is not None:
+        xi, new_tour, joined_i = xi_result
+
+        # check bettter tour!
+        if i >= 1:
+            if i == 1:
+                partial_gain_im1 = 0
+            else:
+                _, partial_gain_im1 = ts.iter[i-1]
+
+            join_gain_i = exchange_gain(xi, joined_i, ts.costs)
+
+            if partial_gain_im1 + join_gain_i > 0:
+                return new_tour, join_gain_i
+
+        sel_x[i] = xi
+        add_create_edge(i, used_x, xi)
+        return evaluate_y(i, used_x, used_y, sel_x, sel_y, ts)
     
     if i == 1:
         used_x.pop(1, None)
-        used_y.pop(0, None)
+        # used_y.pop(0, None)
+        return evaluate_y(0, used_x, used_y, sel_x, sel_y, ts)
     elif i == 0:
         # exhausted all x_0 so go to different t_base
         return None
@@ -302,106 +295,81 @@ def evaluate_x(i: int, used_x: UsedEdges, used_y: UsedEdges, sel_x: SelectedEdge
         raise ValueError("x_i should exist for higher i!")
     
 
+def evaluate_y(i: int, used_x: UsedEdges, used_y: UsedEdges, sel_x: SelectedEdges, sel_y: SelectedEdges, ts: TourState) -> Optional[tuple[list[int], float]]:
+    yi_result = next_y(i, used_x, used_y, sel_x, sel_y, ts)
+    
+    if yi_result is not None:
+        xi = sel_x[i]
+        yi, gain_i, xi1_res = yi_result
 
+        sel_y[i] = yi
+        add_create_edge(i, used_y, yi)
+        
+        if i == 0:
+            tgraph_im1 = ts.tgraph
+            partial_gain_im1 = 0
+        else:
+            tgraph_im1, partial_gain_im1 = ts.iter[i - 1]
 
-def evaluate_y(i: int, used_x: UsedEdges, used_y: UsedEdges, sel_x: SelectedEdges, sel_y: SelectedEdges):
-    y_i_result = next_y(i, used_y)
-    y_i = (0, 0) # TODO change
-    if y_i_result is not None:   
-        sel_y[i] = y_i
-        add_create_edge(i, used_y, y_i)
+        tgraph_i = exchange_edges(tgraph_im1, xi, yi)
+        partial_gain_i = partial_gain_im1 + gain_i
+        ts.iter[i] = (tgraph_i, partial_gain_i)
+
         i = i+1
-        return evaluate_x(i, used_x, used_y, sel_x, sel_y)
+
+        return evaluate_x(i, used_x, used_y, sel_x, sel_y, ts, xi_from_y=xi1_res)
+    
     if i >= 2:
         # since we just tried for y_1 we know no more exist
-        i = 1
-        return evaluate_x(1, used_x, used_y, sel_x, sel_y)
+        return evaluate_x(1, used_x, used_y, sel_x, sel_y, ts)
     elif i == 1:
         used_y.pop(1, None)
-        return evaluate_x(1, used_x, used_y, sel_x, sel_y)
-    elif i == 0:
+        return evaluate_x(1, used_x, used_y, sel_x, sel_y, ts)
+    else:
         used_y.pop(0, None)
-        return evaluate_x(0, used_x, used_y, sel_x, sel_y)
+        return evaluate_x(0, used_x, used_y, sel_x, sel_y, ts)
+    
 
-
-def try_t0(n: int, t0: int, tour: list[int], costs: list[list[float]]) -> list[int]:
+def improve_tour(n: int, tbase: int, tour: list[int], costs: list[list[float]]):
     d_tour = dict_tour(tour)
-    tour_n_a_dict = d_tour_to_node_adj_dict(n, d_tour)
-    i = 0
-    t_chain = [t0]
-    while True:
-        t_chain.append(0)
-        x0, unpicked_x0 = pick_x0(d_tour, t0, costs)
-        prev_xs = [x0]
-        # first one is t0
-        t1 = x0[1]
-        t_chain[1] = t1
-        y0, unpicked_y0, gain_0 = pick_y0(n, d_tour, t0, t1, costs)
-        partial_gain_0 = gain_0
-        
-        if y0 is None:
-            # try another t0 (break from inner while loop)
-            break
+    tgraph = d_tour_to_node_adj_dict(n, d_tour)
+    ts = TourState(n, tbase, tour, d_tour, tgraph, costs, dict())
 
-        t_chain[2] = y0[1]
-        prev_ys = [y0]
-        updated_tour_n_a_dict = exchange_edges(tour_n_a_dict, x0, y0)
-        i = 1
-        t2i, t_chain = next_t2i(i, t_chain)
-        maybe_x1 = pick_xi(n, t2i, t0, d_tour, updated_tour_n_a_dict, prev_ys)
-        if maybe_x1 is None:
-            # TODO relax the tour having to be valid
-            raise ValueError("x1 one should exist!")
-        
-        x1, joined_1, new_tour, updated_tour_n_a_dict = maybe_x1
-        x1_joined_gain = exchange_gain(x1, joined_1, costs)
-        if partial_gain_0 + x1_joined_gain > 0:
-            return new_tour
-        prev_xs.append(x1)
-        xi = x1
-        partial_gain_im1 = partial_gain_0
-        while True:
-            t2i1 = t_chain[2*i+1]
-            maybe_yi_xi1 = pick_yi_xi1(n, t2i1, t0, xi, partial_gain_im1, d_tour, tour_n_a_dict, costs, prev_xs, prev_ys)
-            
-            if maybe_yi_xi1 is None:
+    return evaluate_x(i=0, used_x=dict(), used_y=dict(), sel_x=dict(), sel_y=dict(), ts=ts)
+
+
+
+def lin_kernighan(costs: list[list[float]]):
+    n = len(costs)
+    tour = random_tour(n)
+    # tour = [3, 5, 1, 0, 2, 4]
+    # print(f"random tour: {tour}")
+
+    last_tour = tour
+    new_tour = tour
+    tour_gain = 0
+
+    while new_tour is not None:
+        # untried_tbase = [4, 3, 1, 0, 2, 5]
+        untried_tbase = shuffle_iter(new_tour)
+        last_tour = new_tour
+        new_tour = None
+
+        while len(untried_tbase) > 0:
+            tbase = untried_tbase.pop()
+            # print(f"trying tbase of {tbase}")
+            improve_result = improve_tour(n, tbase, last_tour, costs)
+
+            if improve_result is None:
+                continue
+            else:
+                improved_tour, improvement = improve_result
+                # print(f"improvement of {improvement}: {improved_tour}")
+                new_tour = improved_tour
+                tour_gain += improvement
                 break
 
-            yi, xi1, joined_i1, gain_i, new_tour, updated_tour_n_a_dict = maybe_yi_xi1
-            partial_gain_i = partial_gain_im1 + gain_i
-            t_chain += [0, 0]
-            t_chain[2*i+2] = yi[1]
-            t_chain[2*i+3] = xi1
-
-            i = i + 1
-            partial_gain_im1 = partial_gain_i
-            
-            
-            # t2i = t_chain[2*i]
-            # maybe_yi = pick_xi(n, t2i, t0, d_tour, updated_tour_n_a_dict, prev_ys)
-            
-            
-
-            # t2i1 = xi[1]
-            # t_chain[2*i + 1] = t2i1
-
-def lin_kernighan(n: int, costs: list[list[float]]):
-    tour = random_tour(n)
-
-    while True:
-        untried_t0 = tour.copy()
-
-        better_tour = None
-
-        while len(untried_t0) > 0:
-            t0 = untried_t0.pop()
-            tour_t0, is_better = try_t0(n, t0, tour, costs)
-
-            if is_better:
-                better_tour = tour_t0
-
-        if better_tour is None:
-            break
+    return last_tour, tour_gain
     
     
     
