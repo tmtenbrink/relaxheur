@@ -42,21 +42,8 @@ def length_tour(graph, tour):
     return length
 
 
-def nearest_neighbor(graph, starting_node=0):
-    tour = [starting_node]
-    for i in range(len(graph) - 1):
-        row = graph[tour[i]]
-        filtered_values = [d for d in row if d > 0 and row.index(d) not in tour]
-        min_distance = min(filtered_values)
-        next_node = row.index(min_distance)
-        tour.append(next_node)
-
-    tour.append(tour[starting_node])
-
-    return tour
-
-
-def nearest_neighbor_test1(graph, starting_node=None):
+def nearest_neighbor1(graph, starting_node=None):
+    # gets error if distances are not unique
     if starting_node == None:
         starting_node = random.randrange(0, len(graph), 1)
     tour = [starting_node]
@@ -72,7 +59,8 @@ def nearest_neighbor_test1(graph, starting_node=None):
     return tour
 
 
-def nearest_neighbor_test2(graph, starting_node=None):
+def nearest_neighbor2(graph, starting_node=None):
+    # fixed non-uniqueness of distances
     if starting_node == None:
         starting_node = random.randrange(0, len(graph), 1)
     tour = [starting_node]
@@ -89,7 +77,7 @@ def nearest_neighbor_test2(graph, starting_node=None):
     return tour
 
 
-def nearest_neighbor2(graph, max_retries=10):
+def nearest_neighbor3(graph, max_retries=10):
     for _ in range(max_retries):
         starting_node = random.randrange(0, len(graph), 1)
         tour = [starting_node]  # Choose random starting node
@@ -118,7 +106,7 @@ def nearest_neighbor2(graph, max_retries=10):
 
 
 def simulated_annealing(graph, T, r, L=10000, max_no_improvement=500):
-    S = nearest_neighbor(graph)  # set initial solution S to be greedy solution
+    S = nearest_neighbor1(graph)  # set initial solution S to be greedy solution
     epsilon = 1e-6
     no_improvement_count = 0
 
@@ -155,21 +143,14 @@ def run():
 
     n, graph_l = parse_as_adj_matrix(inst_path)
 
-    fail = np.zeros(n)
-    check = np.zeros(n)
-
     for i in range(n):
-        greedy_tour1 = nearest_neighbor_test2(graph_l, i)
-        print(i, length_tour(graph_l, greedy_tour1))
+        greedy_tour2 = nearest_neighbor2(graph_l, i)
+        print(i, length_tour(graph_l, greedy_tour2))
         try:
-            greedy_tour2 = nearest_neighbor_test1(graph_l, i)
-            check[i] = greedy_tour1 == greedy_tour2
-            # print(length_tour(graph_l, greedy_tour))
+            greedy_tour1 = nearest_neighbor1(graph_l, i)
+            print(length_tour(graph_l, greedy_tour1))
         except:
-            check[i] = 1
-            # print("fail")
-
-    print(check)
+            print("fail")
 
     # annealing_tour = simulated_annealing(graph_l, T=100, r=0.9)
     # print(annealing_tour)
