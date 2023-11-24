@@ -1,0 +1,41 @@
+x, y = selected x_i, y_i
+X, Y = evaluated x_i, y_i
+
+EVALUATE x(i, X, Y)
+x_i = NEXT x_i; 
+>if T' better than T
+-> return T'
+>else if x_i exists
+X(i) union x_i
+-> evaluate Y(i, X, Y)
+>else if i == 1:
+i = 0
+reset X(1), Y(0)
+-> evaluate y(i=0, X, Y)
+>else (i.e i == 0)):
+continue with different t_base
+
+EVALUATE y(i, X, Y)
+y_i = NEXT y_i (Y)
+
+If y_i does not exist and i >= 2:
+i = 1
+-> evaluate y(i=1, X, Y)
+
+If y_i does not exist and i == 1:
+(since we just tried for y_1 we know no more exist)
+i = 1
+reset Y(1)
+-> evaluate x(i=1, X, Y)
+
+If y_i does not exist and i == 0:
+(since we now tried all y_0 we know no more exist)
+i = 0
+reset Y(0)
+-> evaluate x(i=0, X, Y)
+
+If found:
+Y(i) union y_i
+i = i+1
+-> evaluate x(new_i, X, Y)
+
