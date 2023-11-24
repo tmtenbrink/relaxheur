@@ -3,10 +3,14 @@ from pathlib import Path
 import random
 import math
 from time import perf_counter_ns
+from typing import Literal, Optional, Union, overload
+
+from linkernighan import lin_kernighan
 
 
-def parse_line(ln: str):
-    return list(map(lambda i: int(i), ln.rstrip().split(" ")))
+def parse_line(ln: str, as_float = False) -> Union[list[float], list[int]]:
+    convert = float if as_float else int
+    return list(map(lambda i: convert(i), ln.rstrip().split(" ")))
 
 
 def get_inst_path():
@@ -19,15 +23,28 @@ def get_inst_path():
     return Path(args.inst_name)
 
 
-def parse_as_adj_matrix(inst_path: Path):
+@overload
+def parse_as_adj_matrix(inst_path: Path, as_float: Literal[True]) -> list[list[float]]:
+    ...
+
+@overload
+def parse_as_adj_matrix(inst_path: Path, as_float: Literal[False]) -> list[list[int]]:
+    ...
+
+@overload
+def parse_as_adj_matrix(inst_path: Path,) -> list[list[int]]:
+    ...
+
+
+def parse_as_adj_matrix(inst_path: Path, as_float=False):  # type: ignore
     with open(inst_path, "r") as f:
         lines = f.readlines()
 
-    line_0 = parse_line(lines[0])
-    n = line_0[0]
-    adj_matrix = list(map(lambda ln: parse_line(ln), lines[1:]))
+    # line_0 = parse_line(lines[0])
+    adj_matrix = list(map(lambda ln: parse_line(ln, as_float), lines[1:]))
+    # n = line_0[0]
 
-    return n, adj_matrix
+    return adj_matrix
 
 
 def length_tour(graph, tour):
@@ -98,21 +115,21 @@ def simulated_annealing(graph, T, r, L=1000, max_no_improvement=1e9):
 
 def run():
     # inst_path = get_inst_path()
-    # inst_path = Path("tsp/burma14.dat")
-    inst_path = Path("tsp/att48.dat")
+    inst_path = Path("tsp/burma14.dat")
+    # inst_path = Path("tsp/gr48.dat")
 
-    n, graph_l = parse_as_adj_matrix(inst_path)
+    graph_l = parse_as_adj_matrix(inst_path)
 
     print("Value of heuristic")
 
-    # Greedy Heuristic: Nearest neighbor
+    # # Greedy Heuristic: Nearest neighbor
     start_time = perf_counter_ns()
     greedy_tour = nearest_neighbor(graph_l)
     greedy_time = (perf_counter_ns() - start_time) / 1e9
     greedy_length = length_tour(graph_l, greedy_tour)
     print(f"- Nearest Neighbor: {greedy_length}, {greedy_time}s")
 
-    # Simulated Annealing1
+    # # Simulated Annealing1
     start_time = perf_counter_ns()
     annealing_tour = simulated_annealing(graph_l, T=100, r=0.95, L=1000)
     annealing_time = (perf_counter_ns() - start_time) / 1e9
@@ -131,8 +148,9 @@ def run():
     )
 
     # Lin-Kernighan
+    graph_l_fl = parse_as_adj_matrix(inst_path, as_float=True)
     start_time = perf_counter_ns()
-    lin_tour = nearest_neighbor(graph_l)
+    lin_tour, gain = lin_kernighan(graph_l_fl)
     lin_time = (perf_counter_ns() - start_time) / 1e9
     lin_length = length_tour(graph_l, lin_tour)
     print(f"- Lin-Kernighan: {lin_length}, {lin_time}s")
