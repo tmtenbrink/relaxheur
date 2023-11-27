@@ -7,14 +7,14 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = ">=3.9, <3.10"
-numpy = "^1.26.1"
 gurobipy = "^10.0.3"
-scipy = "^1.11.3"
-networkx = "^3.2"
+
 
 
 [tool.poetry.group.dev.dependencies]
 black = "^23.10.1"
+gurobipy-stubs = "^2.0.0"
+networkx = "^3.2"
 
 [build-system]
 requires = ["poetry-core"]
