@@ -4,6 +4,7 @@ import argparse
 from heapq import heappop, heappush, heapify
 from functools import total_ordering
 from random import randrange
+from time import perf_counter_ns
 
 import gurobipy as gp
 
@@ -159,6 +160,8 @@ def do_branch_and_bound(inst: Costs):
     # just to indicate we are working with a list with the heap property
     heapify(active_nodes)
 
+    start_opt = perf_counter_ns()
+
     # Main loop.
     while active_nodes:
         # Select an active node to process. We choose the one with the lowest lower bound (hopefully this will also 
@@ -168,9 +171,9 @@ def do_branch_and_bound(inst: Costs):
         # Process the node.
         try:
             lb, ub, tour = compute_bounds(inst, problem, best_solution)
-            print(f"New suproblem: lb={lb}, ub={ub} (glb={global_lb}, gub={global_ub})")
+            # print(f"New suproblem: lb={lb}, ub={ub} (glb={global_lb}, gub={global_ub})")
         except InfeasibleRelaxation:
-            print("Infeasible suproblem...")
+            # print("Infeasible suproblem...")
             # Pruned by infeasibility.
             continue
 
@@ -178,7 +181,7 @@ def do_branch_and_bound(inst: Costs):
         if ub < global_ub:
             global_ub = ub
             best_solution = tour 
-            print("Improved upper bound:", global_ub)
+            print(f"Improved upper bound. (glb={global_lb}, gub={global_ub})")
 
         # by heap property we have that active_nodes[0] has the lowest lower bound
         new_global_lb = min(lb, active_nodes[0].lb) if active_nodes else lb
@@ -186,17 +189,17 @@ def do_branch_and_bound(inst: Costs):
         # if it's greater than global ub we've already found an optimum and we're just making things worse
         if new_global_lb > global_lb and new_global_lb < global_ub:
             global_lb = new_global_lb
-            print("Improved lower bound:", global_lb)
+            print(f"Improved lower bound. (glb={global_lb}, gub={global_ub})")
 
         # Prune by bound
         if lb > global_ub:
-            print("Pruning suproblem by worse lower bound...")
+            # print("Pruning suproblem by worse lower bound...")
             continue
             
 
         # Prune by optimality
         if lb == ub:
-            print("Optimal...")
+            # print("Optimal...")
             continue
 
         # split into two based on first non-integer edge
@@ -204,7 +207,7 @@ def do_branch_and_bound(inst: Costs):
         for e_idx, e_val in enumerate(problem.model.char_vec()):
             epsilon = 0.0000001
             if abs(round(e_val) - e_val) > epsilon:
-                print(f"edge {e_idx} with value {e_val} is not integer. Splitting...")
+                # print(f"edge {e_idx} with value {e_val} is not integer. Splitting...")
                 edge = edges_by_index[e_idx]
                 new_model_l = problem.model.copy_fix(e_idx, 1)
                 new_model_r = problem.model.copy_fix(e_idx, 0)
@@ -228,7 +231,7 @@ def do_branch_and_bound(inst: Costs):
             print(f"Integer LP solution...")
             if lb < global_ub:
                 tour = problem.model.get_tour(edges_by_index)
-                global_lb = ub
+                global_ub = lb
                 best_solution = tour 
                 print(f"Improved upper bound {global_ub}.")
             
@@ -241,6 +244,9 @@ def do_branch_and_bound(inst: Costs):
     # Check that the solution is truly feasible.
     # if infeasible:
     #    raise RuntimeError('solution is infeasible; this is a bug')
+
+    opt_time = (perf_counter_ns() - start_opt) / 1e9
+    print(f"Optimizing using B&B took {opt_time} s.")
 
     # Return optimal solution.
     return global_ub, best_solution
