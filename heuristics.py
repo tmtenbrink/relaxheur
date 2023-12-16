@@ -492,20 +492,25 @@ def improve_tour(n: int, tbase: int, tour: list[int], costs: list[list[float]]):
 
 
 
-def lin_kernighan(costs: list[list[float]], no_random=False):
+def lin_kernighan(costs: list[list[float]], start_tour: Optional[list[int]]=None, no_random=False):
     n = len(costs)
-    tour = random_tour(n)
-    if no_random:
+    
+    if start_tour is not None:
+        tour = start_tour
+    elif no_random:
         tour = list(range(n))
-
+    else:
+        tour = random_tour(n)
+        
     last_tour = tour
     new_tour = tour
     tour_gain = 0
 
     while new_tour is not None:
-        untried_tbase = shuffle_iter(new_tour)
-        if no_random:
+        if no_random or start_tour is not None:
             untried_tbase = new_tour.copy()
+        else:
+            untried_tbase = shuffle_iter(new_tour)
         last_tour = new_tour
         new_tour = None
 
@@ -555,6 +560,25 @@ def check_fixed(tour: list[int], fixed_edges: list[tuple[Edge, Literal[0, 1]]]):
                 raise ValueError(f"Edge {e} is required in tour but was not found!")
 
     print("Fixed edges are correct!")
+ 
+
+def check_fixed_tour(tour: list[int], fixed_one: list[Edge], fixed_zero: list[Edge]):
+    tour_edges_l = []
+    for i in range(len(tour)):
+        if i == 0:
+            continue
+        tour_edges_l.append((tour[i], tour[i-1]))
+        tour_edges_l.append((tour[i-1], tour[i]))
+    tour_edges_l.append((tour[0], tour[-1]))
+    tour_edges_l.append((tour[-1], tour[0]))
+    tour_edges = set(tour_edges_l)
+
+    for e in fixed_zero:
+        if e in tour_edges:
+                raise ValueError(f"Edge {e} is not allowed in tour but was found!")
+    for e in fixed_one:
+        if e not in tour_edges:
+                raise ValueError(f"Edge {e} is required in tour but was not found!")
 
 def run():
     # inst_path = get_inst_path()
