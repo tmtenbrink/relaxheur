@@ -1,6 +1,8 @@
+from dataclasses import dataclass
 from pathlib import Path
 import argparse
-
+from heapq import heappop, heappush, heapify
+from functools import total_ordering
 from random import randrange
 
 import gurobipy as gp
@@ -17,19 +19,8 @@ from relax import (
 )
 
 
-@overload
-def parse_line(ln: str, as_float: Literal[True]) -> list[float]:
-    ...
-
-
-@overload
-def parse_line(ln: str) -> list[int]:
-    ...
-
-
-def parse_line(ln: str, as_float=False) -> Union[list[float], list[int]]:
-    convert = float if as_float else int
-    return list(map(lambda i: convert(i), ln.rstrip().split(" ")))
+def parse_line(ln: str) -> list[float]:
+    return list(map(lambda i: float(i), ln.rstrip().split(" ")))
 
 
 def get_inst_path():
@@ -39,27 +30,11 @@ def get_inst_path():
 
     return Path(args.inst_name)
 
-
-@overload
-def parse_as_adj_matrix(inst_path: Path, as_float: Literal[True]) -> list[list[float]]:
-    ...
-
-
-@overload
-def parse_as_adj_matrix(
-    inst_path: Path,
-) -> list[list[int]]:
-    ...
-
-
-def parse_as_adj_matrix(inst_path: Path, as_float=False):
+def parse_as_adj_matrix(inst_path: Path) -> list[list[float]]:
     with open(inst_path, "r") as f:
         lines = f.readlines()
 
-    if as_float:
-        adj_matrix = list(map(lambda ln: parse_line(ln, True), lines[1:]))
-    else:
-        adj_matrix = list(map(lambda ln: parse_line(ln), lines[1:]))
+    adj_matrix = list(map(lambda ln: parse_line(ln), lines[1:]))
 
     return adj_matrix
 
@@ -84,19 +59,25 @@ def length_tour(graph, tour):
 # ========== Branch and Bound ==========
 # ======================================
 
+Edge = tuple[int, int]
 
+@total_ordering
+@dataclass
 class Subproblem:
-    def __init__(self, fixed_one, fixed_zero, lb):
-        self.fixed_one = set(fixed_one)
-        self.fixed_zero = set(fixed_zero)
-        self.lb = lb
+    fixed_one: set[Edge]
+    fixed_zero: set[Edge]
+    lb: float       
+
+    # we define lt method so that they can be compared by heapsort
+    def __lt__(self, other):
+        return self.lb < other.lb
 
 
 class InfeasibleSubproblem(Exception):
     pass
 
 
-def compute_bounds(inst, P):
+def compute_bounds(inst: list[list[float]], problem: Subproblem):
     # if infeasible:
     #    raise InfeasibleSubproblem()
 
@@ -121,37 +102,35 @@ def compute_bounds(inst, P):
     return lb, ub, lin_tour
 
 
-def do_branch_and_bound(inst):
+def do_branch_and_bound(inst: list[list[float]]):
     # Global upper and lower bounds, and best solution found so far.
     # inst is adjacency matrix
     sum_ = 0
+    # cost is definitely lower than the sum of all the costs
     for lst in inst:
         sum_ += sum(lst)
     global_ub = sum_
-    global_lb = -1
+    global_lb = -1.0
     best_solution = []
+
+    n = len(inst)
 
     # ====== AANPASSEN  LB <-> UB
 
-    # After processing a node, the new global lower bound is the
-    # minimum of the lower bounds of active nodes and integer
-    # nodes. Since integer nodes get out of the list of active nodes,
-    # we keep the minimum lower bound of integer nodes in the
-    # following variable.
-    integer_node_bound = -1
-
     # Initialization.
-    active_nodes = [Subproblem([], [], global_ub)]  # ==== checken
+    active_nodes: list[Subproblem] = [Subproblem(set(), set(), global_lb)]
+    # just to indicate we are working with a list with the heap property
+    heapify(active_nodes)
 
     # Main loop.
     while active_nodes:
-        # Select an active node to process.
-        P = active_nodes[0]
-        active_nodes = active_nodes[1:]
+        # Select an active node to process. We choose the one with the lowest lower bound (hopefully this will also 
+        # have a good upper bound, alllowing us to prune faster)
+        problem = heappop(active_nodes)
 
         # Process the node.
         try:
-            lb, ub, items = compute_bounds(inst, P)  # ====== AANPASSEN items
+            lb, ub, tour = compute_bounds(inst, problem)
         except InfeasibleSubproblem:
             # Pruned by infeasibility.
             continue
@@ -159,42 +138,36 @@ def do_branch_and_bound(inst):
         # Update global upper bound.
         if ub < global_ub:
             global_ub = ub
-            best_solution = list(P.fixed_one) + items  # ====== AANPASSEN
+            best_solution = tour 
             print("Improved lower bound:", global_ub)
 
-        # Update global lower bound.
-        if lb == ub and ub > integer_node_bound:  # ???
-            integer_node_bound = lb
-
-        if active_nodes:
-            new_global_lb = min(lb, integer_node_bound, min(P.lb for P in active_nodes))
-        else:
-            new_global_lb = min(lb, integer_node_bound)
+        # by heap property we have that active_nodes[0] has the lowest lower bound
+        new_global_lb = min(lb, active_nodes[0].lb)
 
         if new_global_lb > global_lb:
             global_lb = new_global_lb
             print("Improved lower bound:", global_lb)
 
-        # Prune by bound?
+        # Prune by bound
         if lb > global_ub:
             continue
 
-        # Prune by optimality?
+        # Prune by optimality
         if lb == ub:
             continue
 
-        # Select variable for split and perform the split.
+        # Select edge for split and perform the split.
         # use LP relaxation -> select variable to split, one that is not integer
-        for i in range(inst.n):
-            if i not in P.fixed_one and i not in P.fixed_zero:
-                break
+        # TODO Fix this
+        for i in range(n):
+            if i not in problem.fixed_one and i not in problem.fixed_zero:
+                Pl = (list(p_fixed_one) + [i], p_fixed_zero, lb)
+                Pr = (p_fixed_one, list(p_fixed_zero) + [i], lb)
+                active_nodes += [Pl, Pr]
         else:
             raise RuntimeError("no variable to fix; this is a bug")
 
-        Pl = Subproblem(list(P.fixed_one) + [i], P.fixed_zero, lb)
-        Pr = Subproblem(P.fixed_one, list(P.fixed_zero) + [i], lb)
-        active_nodes += [Pl, Pr]
-
+        
     assert global_ub >= global_lb
 
     # Check that the solution is truly feasible.
@@ -202,7 +175,7 @@ def do_branch_and_bound(inst):
     #    raise RuntimeError('solution is infeasible; this is a bug')
 
     # Return optimal solution.
-    return ub, best_solution
+    return global_ub, best_solution
 
 
 def run_gurobi(inst):
