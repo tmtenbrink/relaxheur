@@ -110,9 +110,10 @@ class TSPModel:
 
     def optimize_with_val(self):
         """RAISES InfeasibleRelaxation when unable to optimize."""
-        if self.formulation != Formulation.CUTTING_PLANE:
-            raise ValueError("Only cutting plane formulation allowed!")
-        self.model = optimize_cut_model(self)
+        if self.formulation == Formulation.CUTTING_PLANE:
+            self.model = optimize_cut_model(self)
+        else:
+            self.model.optimize()
         return self.model.ObjVal
 
     def copy(self):
@@ -212,7 +213,8 @@ class TSPModel:
             else:
                 queue.append([node_1, node_2])
 
-        return tour
+        # the start/endpoint is going to be added twice, so we have to remove it
+        return tour[1:]
 
     def print_sol(self):
         char_vec, x_values = self.char_vec_values()
@@ -409,103 +411,115 @@ def cutting_plane_model(n: int, edge_costs: EdgeCosts):
     return TSPModel(model, n, edge_costs, Formulation.CUTTING_PLANE)
 
 
-# def get_arc_idxs_for_v(vertex: int, n: int, incoming: bool):
-#     lower_add = 0 if incoming else 1
-#     higher_add = 1 - lower_add
+def get_arc_idxs_for_v(vertex: int, n: int, incoming: bool):
+    lower_add = 0 if incoming else 1
+    higher_add = 1 - lower_add
 
-#     lower_edges = [2*edge_idx(other_v, vertex, n)+lower_add for other_v in range(0, vertex)]
-#     higher_edges = [2*edge_idx(vertex, other_v, n)+higher_add for other_v in range(vertex+1, n)]
+    lower_edges = [2*edge_idx(other_v, vertex, n)+lower_add for other_v in range(0, vertex)]
+    higher_edges = [2*edge_idx(vertex, other_v, n)+higher_add for other_v in range(vertex+1, n)]
 
-#     return lower_edges + higher_edges
+    return lower_edges + higher_edges
 
-# def get_in_arc_idxs_for_v(vertex: int, n: int):
-#     """Return the indexes of the incoming arcs for a vertex, i.e. where v is the head (so second vertex in the ordered pair)."""
-#     return get_arc_idxs_for_v(vertex, n, True)
+def get_in_arc_idxs_for_v(vertex: int, n: int):
+    """Return the indexes of the incoming arcs for a vertex, i.e. where v is the head (so second vertex in the ordered pair)."""
+    return get_arc_idxs_for_v(vertex, n, True)
 
-# def get_out_arc_idxs_for_v(vertex: int, n: int):
-#     """Return the indexes of the incoming arcs for a vertex, i.e. where v is the head (so second vertex in the ordered pair)."""
-#     return get_arc_idxs_for_v(vertex, n, False)
-
-
-# def extended_formulation(n: int, edge_costs: EdgeCosts):
-#     model = gp.Model("extended")
-#     # don't log
-#     model.setParam("LogToConsole", 0)
-#     print("Building extended formulation...")
-#     start_build = perf_counter_ns()
-
-#     m_edges = (n * (n - 1)) // 2
-#     # for i<j (i, j) is the (n-1 + n-2 + ... + n - i) + (j - i -1)th element
-#     # i.e. index is i(2n-i-1)/2 + (j-i-1)
-#     char_vec = [model.addVar(lb=0, name=f"char_{e}", vtype=gp.GRB.BINARY) for e in range(m_edges)]
-#     num_arcs = 2 * m_edges
-#     # rows are vertices without r
-#     # columns are the arcs, with same indexing as above
-#     # but where (i, j) and (j, i) follow each other (so edge_index * 2 for (i, j)
-#     # with still i<j
-#     flow: list[list[gp.Var]] = [[model.addVar(lb=0, name=f"f_{s}({a})") for a in range(num_arcs)] for s in range(1, n)]
-#     z = gp.LinExpr(edge_costs, char_vec)
-#     model.setObjective(z, gp.GRB.MINIMIZE)
-
-#     # each column is all the vertices other than the vertex corresponding to column
-#     # so (n-1), n array
-#     cut_arr = edge_idxs_for_all_v(n)
-#     coeff_1 = [1]*len(cut_arr[0])
-#     for v in range(n):
-#         v_cut = cut_arr[v]
-#         cut_x = [char_vec[e] for e in v_cut]
-#         model.addConstr(gp.LinExpr(coeff_1, cut_x) == 2, name=f"x(delta({v}))==2")
-#     # we take transpose so we can easily access the rows
-#     cuts_in = [get_in_arc_idxs_for_v(v, n) for v in range(n)]
-#     cuts_out = [get_out_arc_idxs_for_v(v, n) for v in range(n)]
-
-#     cut_in_r = cuts_in[0]
-#     cut_out_r = cuts_out[0]
-#     coeff_r_1_in = [1]*len(cut_in_r)
-#     coeff_r_1_out = [1]*len(cut_out_r)
-
-#     for s in range(1, n):
-#         f_s = flow[s - 1]
-#         fs_r_out = [f_s[a] for a in cut_out_r]
-#         fs_r_in = [f_s[a] for a in cut_in_r]
-#         out_sum = gp.LinExpr(coeff_r_1_out, fs_r_out)
-#         in_sum = gp.LinExpr(coeff_r_1_in, fs_r_in)
-#         model.addConstr(
-#             out_sum - in_sum >= 2,
-#             name=f"f_{s}(delta_out(r))-f_{s}(delta_in(r))>=2",
-#         )
+def get_out_arc_idxs_for_v(vertex: int, n: int):
+    """Return the indexes of the incoming arcs for a vertex, i.e. where v is the head (so second vertex in the ordered pair)."""
+    return get_arc_idxs_for_v(vertex, n, False)
 
 
-#     for s in range(1, n):
-#         f_s = flow[s - 1]
-#         # we make sure we get arrays correspond to the right index of the char. vector
-#         for e in range(m_edges):
-#             a1 = 2*e
-#             a2 = 2*e + 1
-#             model.addConstr(f_s[a1] - char_vec[e] <= 0, name=f"f_{a1}<=x({a1})")
-#             model.addConstr(f_s[a2] - char_vec[e] <= 0, name=f"f_{a2}<=x({a2})")
+def extended_formulation(n: int, edge_costs: EdgeCosts, integer: bool = False):
+    model = gp.Model("extended")
+    # don't log
+    model.setParam("LogToConsole", 0)
+    # set to dual simplex
+    model.setParam("Method", 1)
+    print("Building extended formulation...")
+    start_build = perf_counter_ns()
 
-#         for other_v in range(0, n):
-#             # skip r and s
-#             if other_v == 0 or other_v == s:
-#                 continue
+    m_edges = (n * (n - 1)) // 2
+    # for i<j (i, j) is the (n-1 + n-2 + ... + n - i) + (j - i -1)th element
+    # i.e. index is i(2n-i-1)/2 + (j-i-1)
+    edge_vtype = gp.GRB.BINARY if integer else gp.GRB.CONTINUOUS
+    char_vec = [model.addVar(lb=0, ub=1, name=f"char_{e}", vtype=edge_vtype) for e in range(m_edges)]
+    num_arcs = 2 * m_edges
+    # rows are vertices without r
+    # columns are the arcs, with same indexing as above
+    # but where (i, j) and (j, i) follow each other (so edge_index * 2 for (i, j)
+    # with still i<j
+    flow: list[list[gp.Var]] = [[model.addVar(lb=0, name=f"f_{s}({a})") for a in range(num_arcs)] for s in range(1, n)]
+    z = gp.LinExpr(edge_costs, char_vec)
+    model.setObjective(z, gp.GRB.MINIMIZE)
 
-#             cut_out_v = cuts_out[other_v]
-#             cut_in_v = cuts_in[other_v]
-#             coeff_v_1_in = [1]*len(cut_in_v)
-#             coeff_v_1_out = [1]*len(cut_out_v)
-#             fs_v_out = [f_s[v] for v in cut_out_v]
-#             fs_v_in = [f_s[v] for v in cut_in_v]
+    # each column is all the vertices other than the vertex corresponding to column
+    # so (n-1), n array
+    cut_arr = edge_idxs_for_all_v(n)
+    coeff_1 = [1]*len(cut_arr[0])
+    for v in range(n):
+        v_cut = cut_arr[v]
+        cut_x = [char_vec[e] for e in v_cut]
+        model.addConstr(gp.LinExpr(coeff_1, cut_x) == 2, name=f"x(delta({v}))==2")
+    # we take transpose so we can easily access the rows
+    cuts_in = [get_in_arc_idxs_for_v(v, n) for v in range(n)]
+    cuts_out = [get_out_arc_idxs_for_v(v, n) for v in range(n)]
 
-#             out_sum = gp.LinExpr(coeff_v_1_out, fs_v_out)
-#             in_sum = gp.LinExpr(coeff_v_1_in, fs_v_in)
+    cut_in_r = cuts_in[0]
+    cut_out_r = cuts_out[0]
+    coeff_r_1_in = [1]*len(cut_in_r)
+    coeff_r_1_out = [1]*len(cut_out_r)
 
-#             model.addConstr(
-#                 out_sum - in_sum == 0,
-#                 name=f"f_{s}(delta_out({other_v}))-f_{s}(delta_in({other_v}))==0",
-#             )
-#     # We run update to make sure the timer works
-#     model.update()
-#     build_time = (perf_counter_ns() - start_build) / 1e9
-#     print(f"Took {build_time} s.")
-#     return TSPModel(model, n, edge_costs, Formulation.EXTENDED)
+    for s in range(1, n):
+        f_s = flow[s - 1]
+        fs_r_out = [f_s[a] for a in cut_out_r]
+        fs_r_in = [f_s[a] for a in cut_in_r]
+        out_sum = gp.LinExpr(coeff_r_1_out, fs_r_out)
+        in_sum = gp.LinExpr(coeff_r_1_in, fs_r_in)
+        model.addConstr(
+            out_sum - in_sum >= 2,
+            name=f"f_{s}(delta_out(r))-f_{s}(delta_in(r))>=2",
+        )
+
+
+    for s in range(1, n):
+        f_s = flow[s - 1]
+        # we make sure we get arrays correspond to the right index of the char. vector
+        for e in range(m_edges):
+            a1 = 2*e
+            a2 = 2*e + 1
+            model.addConstr(f_s[a1] - char_vec[e] <= 0, name=f"f_{a1}<=x({a1})")
+            model.addConstr(f_s[a2] - char_vec[e] <= 0, name=f"f_{a2}<=x({a2})")
+
+        for other_v in range(0, n):
+            # skip r and s
+            if other_v == 0 or other_v == s:
+                continue
+
+            cut_out_v = cuts_out[other_v]
+            cut_in_v = cuts_in[other_v]
+            coeff_v_1_in = [1]*len(cut_in_v)
+            coeff_v_1_out = [1]*len(cut_out_v)
+            fs_v_out = [f_s[v] for v in cut_out_v]
+            fs_v_in = [f_s[v] for v in cut_in_v]
+
+            out_sum = gp.LinExpr(coeff_v_1_out, fs_v_out)
+            in_sum = gp.LinExpr(coeff_v_1_in, fs_v_in)
+
+            model.addConstr(
+                out_sum - in_sum == 0,
+                name=f"f_{s}(delta_out({other_v}))-f_{s}(delta_in({other_v}))==0",
+            )
+    # We run update to make sure the timer works
+    model.update()
+    build_time = (perf_counter_ns() - start_build) / 1e9
+    print(f"Took {build_time} s.")
+    return TSPModel(model, n, edge_costs, Formulation.EXTENDED)
+
+
+def build_model(n: int, edge_costs: EdgeCosts, formulation: Formulation, integer=False):
+    if formulation == Formulation.EXTENDED:
+        return extended_formulation(n, edge_costs, integer)
+    elif formulation == Formulation.CUTTING_PLANE:
+        if integer:
+            raise ValueError("Cutting plane model cannot compute integer value!")
+        return cutting_plane_model(n, edge_costs)

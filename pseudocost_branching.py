@@ -26,12 +26,13 @@ def pseudocost(
     pseudo_min_list: PseudoList,
     mu=1 / 6,
     epsilon=0.0001,
-) -> int:
+) -> tuple[int, float]:
     sigma_j_plus, eta_j_plus, initialized_j_plus = pseudo_plus_list
     sigma_j_min, eta_j_min, initialized_j_min = pseudo_min_list
 
     best_j = -1
     best_j_score = float("-inf")
+    best_j_value = -1
     for j, value in enumerate(x_values):
         # We definitely do not branch on integer variables
         frac = abs(value - round(value))
@@ -52,8 +53,9 @@ def pseudocost(
         if score > best_j_score:
             best_j = j
             best_j_score = score
+            best_j_value = value
 
-    return best_j
+    return best_j, best_j_value
 
 
 def update_eta_sigma(
@@ -62,14 +64,14 @@ def update_eta_sigma(
     is_upward: bool,
     var_j: int,
     parent_obj: float,
-    branch_var: gp.Var,
+    parent_branch_var_val: float,
     obj_val: float,
 ):
     sigma_j_plus, eta_j_plus, initialized_j_plus = pseudo_plus_list
     sigma_j_min, eta_j_min, initialized_j_min = pseudo_min_list
 
     if is_upward:
-        f_j_plus = math.ceil(branch_var.X) - branch_var.X
+        f_j_plus = math.ceil(parent_branch_var_val) - parent_branch_var_val
         p_i_plus = (obj_val - parent_obj) / f_j_plus
 
         if eta_j_plus[var_j] == 0:
@@ -77,7 +79,7 @@ def update_eta_sigma(
         eta_j_plus[var_j] += 1
         sigma_j_plus[var_j] += p_i_plus
     else:
-        f_j_min = branch_var.X - math.floor(branch_var.X)
+        f_j_min = parent_branch_var_val - math.floor(parent_branch_var_val)
         p_i_min = (obj_val - parent_obj) / f_j_min
 
         if eta_j_min[var_j] == 0:

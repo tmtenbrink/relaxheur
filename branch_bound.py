@@ -11,12 +11,14 @@ import gurobipy as gp
 from typing import Iterable, Optional, Union, Literal, Optional, Union, overload
 
 from heuristics import check_fixed_tour, lin_kernighan, lin_kernighan_fixed
-from pseudocost_branching import PseudoList, pseudocost
+from pseudocost_branching import PseudoList, pseudocost, update_eta_sigma
 from relax import extended_formulation
 
 from relax_bb import (
     EdgeCosts,
+    Formulation,
     InfeasibleRelaxation,
+    build_model,
     cutting_plane_model,
     Costs,
     TSPModel,
@@ -91,6 +93,10 @@ class Subproblem:
     fixed_one: list[Edge]
     fixed_zero: list[Edge]
     parent_lb: float
+    branch_e_idx: int
+    # upward if the branch var has been set to one, downward otherwise
+    upward_branch: bool
+    parent_branch_e_val: float
     model: TSPModel
     # with fixed edges set to inf/ninf
     heur_costs: list[list[float]]
@@ -124,12 +130,12 @@ def compute_bounds(
     return lb, ub, heur_tour, timer
 
 
-def intialize(costs: Costs) -> Subproblem:
+def intialize(costs: Costs, formulation=Formulation.CUTTING_PLANE) -> Subproblem:
     n = len(costs)
     edge_costs = compute_edge_costs(costs)
-    cut_model = cutting_plane_model(n, edge_costs)
+    lp_model = build_model(n, edge_costs, formulation)
 
-    return Subproblem([], [], -1, cut_model, copy_costs(costs))
+    return Subproblem([], [], -1, -1, False, -1, lp_model, copy_costs(costs))
 
 
 def heuristic(
@@ -164,7 +170,7 @@ def heur_fix(heur_costs: Costs, edge: Edge, fix_val: Literal[0, 1]):
     return new_heur_costs
 
 
-def branch_variable(problem: Subproblem, edge: Edge, e_idx: int, parent_lb: float):
+def branch_variable(problem: Subproblem, edge: Edge, e_idx: int, branch_e_val: float, parent_lb: float):
     new_model_l = problem.model.copy_fix(e_idx, 1)
     new_model_r = problem.model.copy_fix(e_idx, 0)
 
@@ -175,10 +181,10 @@ def branch_variable(problem: Subproblem, edge: Edge, e_idx: int, parent_lb: floa
     heur_costs_r = heur_fix(problem.heur_costs, edge, 0)
 
     problem_l = Subproblem(
-        fixed_one_l, problem.fixed_zero, parent_lb, new_model_l, heur_costs_l
+        fixed_one_l, problem.fixed_zero, parent_lb, e_idx, True, branch_e_val, new_model_l, heur_costs_l
     )
     problem_r = Subproblem(
-        problem.fixed_one, fixed_zero_r, parent_lb, new_model_r, heur_costs_r
+        problem.fixed_one, fixed_zero_r, parent_lb, e_idx, False, branch_e_val, new_model_r, heur_costs_r
     )
 
     return problem_l, problem_r
@@ -189,17 +195,19 @@ def find_branch_variable(
     edges_by_index: dict[int, tuple[int, int]],
     pseudo_plus: PseudoList,
     pseudo_min: PseudoList,
-    method: Literal["pseudocost", "first-non-integer"] = "first-non-integer",
-) -> Optional[tuple[Edge, int]]:
+    method: Literal["pseudocost", "first-non-integer"] = "pseudocost",
+) -> Optional[tuple[Edge, int, float]]:
     if method == "first-non-integer":
         for e_idx, e_val in enumerate(problem.model.char_vec()):
             epsilon = 0.0000001
             if abs(round(e_val) - e_val) > epsilon:
                 # print(f"edge {e_idx} with value {e_val} is not integer. Splitting...")
-                return edges_by_index[e_idx], e_idx
+                return edges_by_index[e_idx], e_idx, e_val
     elif method == "pseudocost":
-        e_idx = pseudocost(problem.model.char_vec(), pseudo_plus, pseudo_min)
-        return edges_by_index[e_idx], e_idx
+        e_idx, e_val = pseudocost(problem.model.char_vec(), pseudo_plus, pseudo_min)
+        if e_idx == -1:
+            return None
+        return edges_by_index[e_idx], e_idx, e_val
 
     return None
 
@@ -240,6 +248,8 @@ def do_branch_and_bound(inst: Costs):
         # Process the node.
         try:
             lb, ub, tour, timer = compute_bounds(inst, problem, best_solution, timer)
+            if problem.branch_e_idx != -1:
+                update_eta_sigma(pseudo_plus, pseudo_min, problem.upward_branch, problem.branch_e_idx, problem.parent_lb, problem.parent_branch_e_val, lb)
             # print(f"New suproblem: lb={lb}, ub={ub} (glb={global_lb}, gub={global_ub})")
         except InfeasibleRelaxation:
             # print("Infeasible suproblem...")
@@ -251,7 +261,6 @@ def do_branch_and_bound(inst: Costs):
             global_ub = ub
             best_solution = tour
             print(f"Improved upper bound. (glb={global_lb}, gub={global_ub})")
-            print(f"Opt time: LP={timer[0] / 1e9}, Heur={timer[1] / 1e9}")
 
         # by heap property we have that active_nodes[0] has the lowest lower bound
         new_global_lb = min(lb, active_nodes[0].parent_lb) if active_nodes else lb
@@ -260,7 +269,6 @@ def do_branch_and_bound(inst: Costs):
         if new_global_lb > global_lb and new_global_lb < global_ub:
             global_lb = new_global_lb
             print(f"Improved lower bound. (glb={global_lb}, gub={global_ub})")
-            print(f"Opt time: LP={timer[0] / 1e9}, Heur={timer[1] / 1e9}")
 
         # Prune by bound
         if lb > global_ub:
@@ -280,6 +288,7 @@ def do_branch_and_bound(inst: Costs):
             # we've found an integer solution that the heuristic couldn't find
             print(f"Integer LP solution...")
             if lb < global_ub:
+                
                 tour = problem.model.get_tour(edges_by_index)
                 global_ub = lb
                 best_solution = tour
@@ -288,10 +297,10 @@ def do_branch_and_bound(inst: Costs):
 
             # problem.model.print_sol()
             # raise RuntimeError("no variable to fix; this is a bug")
-        branch_edge, branch_edge_idx = branch_var_res
+        branch_edge, branch_edge_idx, branch_e_value = branch_var_res
 
         problem_l, problem_r = branch_variable(
-            problem, branch_edge, branch_edge_idx, lb
+            problem, branch_edge, branch_edge_idx, branch_e_value, lb
         )
         heappush(active_nodes, problem_l)
         heappush(active_nodes, problem_r)
@@ -303,8 +312,9 @@ def do_branch_and_bound(inst: Costs):
     #    raise RuntimeError('solution is infeasible; this is a bug')
 
     opt_time = (perf_counter_ns() - start_opt) / 1e9
-    print(f"Optimizing using B&B took {opt_time} s.")
-    print(f"Opt time: LP={timer[0] / 1e9}, Heur={timer[1] / 1e9}")
+    print(f"\t- integer optimal: {global_lb}")
+    print(f"\t- optimal tour: {best_solution}")
+    print(f"Optimizing using B&B with cutting plane relaxation and Lin-Kernighan took {opt_time} s.")
 
     # Return optimal solution.
     return global_ub, best_solution
@@ -316,20 +326,24 @@ def gurobi_integer(inst: list[list[float]]):
 
     n = len(inst)
     edge_costs = compute_edge_costs(inst)
-    ext_model = extended_formulation(n, edge_costs)
-    ext_model.optimize()
+    ext_model = build_model(n, edge_costs, Formulation.EXTENDED, integer=True)
+    print(f"Optimizing integer extended formulation...")
+    start_opt = perf_counter_ns()
+    value = ext_model.optimize_with_val()
+    opt_time = (perf_counter_ns() - start_opt) / 1e9
+    tour = ext_model.get_tour()
+    print(f"\t- integer optimal: {value}")
+    print(f"\t- optimal tour: {tour}")
+    print(f"Optimizing extended integer model using only Gurobi took {opt_time} s.")
 
 
 def main():
     # inst_path = get_inst_path()
     inst_path = Path("tsp/gr48.dat")
     graph_l = parse_as_adj_matrix(inst_path)
+    
+    do_branch_and_bound(graph_l)
 
-    print("Here is the output of the branch-and-bound method")
-    opt, sol = do_branch_and_bound(graph_l)
-    print("\nOptimal solution =", opt, " tour =", sol)
-
-    print("\nNow we run Gurobi...\n")
     gurobi_integer(graph_l)
 
 
