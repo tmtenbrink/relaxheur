@@ -476,7 +476,7 @@ def cutting_plane_model(n: int, edge_costs: EdgeCosts):
 
 def run():
     # inst_path = get_inst_path()
-    inst_path = Path("tsp/gr24.dat")
+    inst_path = Path("tsp/gr96.dat")
 
     n, graph_l = parse_as_adj_matrix(inst_path)
     edge_costs = compute_edge_costs(graph_l)

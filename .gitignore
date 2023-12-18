@@ -2,3 +2,4 @@
 tsp
 .python-version
 .vscode
+**/*.pyc

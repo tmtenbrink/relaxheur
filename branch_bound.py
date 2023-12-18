@@ -117,7 +117,7 @@ def compute_bounds(
     best_solution: list[int],
     best_solution_cost: float,
     timer: Timer,
-    heur_amount_i: int
+    heur_amount_i: int,
 ):
     # Solve relaxation to find LB
     # RAISES InfeasibleRelaxation
@@ -157,7 +157,7 @@ def heuristic(
         if tour_cost < best_cost:
             best_heur_tour = tour
             best_cost = tour_cost
-    print(lengths)
+    # print(lengths)
     check_fixed_tour(best_heur_tour, problem.fixed_one, problem.fixed_zero)
     ub = length_tour(costs, best_heur_tour)
     return best_heur_tour, ub
@@ -351,7 +351,7 @@ def gurobi_integer(inst: list[list[float]]):
 
 def main():
     # inst_path = get_inst_path()
-    inst_path = Path("tsp/gr48.dat")
+    inst_path = Path("tsp/gr96.dat")
     graph_l = parse_as_adj_matrix(inst_path)
     
     do_branch_and_bound(graph_l)
