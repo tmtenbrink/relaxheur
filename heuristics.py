@@ -547,6 +547,22 @@ def improve_tour(n: int, tbase: int, tour: list[int], costs: list[list[float]]):
     return
 
 
+def normalize_tour_repr(tour: list[int]):
+    max_size = len(tour)
+
+    bytes_per_n = (max_size.bit_length() + 7) // 8
+
+    i_zero = tour.index(0)
+    prev_part = tour[:i_zero]
+    normalized_tour = tour[i_zero:] + prev_part
+    byte_seq = [i.to_bytes(bytes_per_n, byteorder='big') for i in normalized_tour]
+    tour_bytes = b''.join(byte_seq)
+    tour_bytes_rev = byte_seq[0] + b''.join(reversed(byte_seq[1:]))
+
+    return tour_bytes, tour_bytes_rev
+    
+
+
 def lin_kernighan(
     costs: list[list[float]], start_tour: Optional[list[int]] = None, no_random=False
 ):
@@ -564,9 +580,19 @@ def lin_kernighan(
     tour_gain = 0
 
     # print(f"Starting with tour: {tour}")
+    # seen_tours = set()
 
     while new_tour is not None:
-        if no_random or start_tour is not None:
+        # new_tour_repr = normalize_tour_repr(new_tour)
+        # # print(f"{seen_tours} {new_tour_repr}")
+        # if new_tour_repr[0] in seen_tours:
+        #     print("WEVE SEEN IT ALREADY")
+        #     break
+        
+        # seen_tours.add(new_tour_repr[0])
+        # seen_tours.add(new_tour_repr[1])
+
+        if no_random:
             untried_tbase = new_tour.copy()
         else:
             untried_tbase = shuffle_iter(new_tour)
@@ -650,11 +676,23 @@ def run():
     print("Value of heuristic")
 
     # #Greedy Heuristic: Nearest neighbor
-    start_time = perf_counter_ns()
-    greedy_tour = nearest_neighbor(graph_l)
-    greedy_time = (perf_counter_ns() - start_time) / 1e9
-    greedy_length = length_tour(graph_l, greedy_tour)
-    print(f"- Nearest Neighbor: {greedy_length}, {greedy_time}s")
+    # start_time = perf_counter_ns()
+    # greedy_tour = nearest_neighbor(graph_l)
+    # greedy_time = (perf_counter_ns() - start_time) / 1e9
+    # greedy_length = length_tour(graph_l, greedy_tour)
+    # print(f"- Nearest Neighbor: {greedy_length}, {greedy_time}s")
+
+    # base_list = [0, 1, 2, 3, 4, 5, 6]
+    # s_try = normalize_tour_repr(base_list)
+    # print(s_try)
+
+    # s_try_rev = normalize_tour_repr(list(reversed(base_list)))
+    # sst = {s_try, s_try_rev}
+    # s_try_2 = normalize_tour_repr([3, 4, 5, 6, 0, 1, 2])
+    # s_try_2 = normalize_tour_repr([6, 5, 4, 3, 2, 1, 0])
+
+    # print(sst)
+    # print(s_try_2 in sst)
 
     # Lin-Kernighan
     graph_l_fl = parse_as_adj_matrix(inst_path, as_float=True)

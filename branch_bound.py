@@ -1,9 +1,10 @@
 from dataclasses import dataclass
+import math
 from pathlib import Path
 import argparse
 from heapq import heappop, heappush, heapify
 from functools import total_ordering
-from random import randrange
+from random import randrange, random
 from time import perf_counter_ns
 
 import gurobipy as gp
@@ -114,7 +115,9 @@ def compute_bounds(
     costs: list[list[float]],
     problem: Subproblem,
     best_solution: list[int],
+    best_solution_cost: float,
     timer: Timer,
+    heur_amount_i: int
 ):
     # Solve relaxation to find LB
     # RAISES InfeasibleRelaxation
@@ -122,7 +125,7 @@ def compute_bounds(
     lb = problem.model.optimize_with_val()
     after_lp = perf_counter_ns()
 
-    heur_tour, ub = heuristic(problem, costs, best_solution)
+    heur_tour, ub = heuristic(problem, costs, best_solution, best_solution_cost, heur_amount_i)
     after_heur = perf_counter_ns()
 
     timer = (timer[0] + (after_lp - before), timer[1] + (after_heur - after_lp))
@@ -139,12 +142,25 @@ def intialize(costs: Costs, formulation=Formulation.CUTTING_PLANE) -> Subproblem
 
 
 def heuristic(
-    problem: Subproblem, costs: Costs, best_solution: list[int]
+    problem: Subproblem, costs: Costs, best_solution: list[int], best_sol_cost: float, heur_amount: int = 5
 ) -> tuple[list[int], float]:
-    tour, _ = lin_kernighan(problem.heur_costs, start_tour=best_solution)
-    check_fixed_tour(tour, problem.fixed_one, problem.fixed_zero)
-    ub = length_tour(costs, tour)
-    return tour, ub
+    if heur_amount <= 0:
+        return best_solution, best_sol_cost
+    
+    best_heur_tour, _ = lin_kernighan(problem.heur_costs, start_tour=best_solution, no_random=True)
+    best_cost = length_tour(costs, best_heur_tour)
+    lengths = []
+    for _ in range(heur_amount):
+        tour, _ = lin_kernighan(problem.heur_costs, start_tour=best_solution)
+        tour_cost = length_tour(costs, tour)
+        lengths.append(tour_cost)
+        if tour_cost < best_cost:
+            best_heur_tour = tour
+            best_cost = tour_cost
+    print(lengths)
+    check_fixed_tour(best_heur_tour, problem.fixed_one, problem.fixed_zero)
+    ub = length_tour(costs, best_heur_tour)
+    return best_heur_tour, ub
 
 
 def initial_ub(inst: Costs) -> float:
@@ -233,11 +249,14 @@ def do_branch_and_bound(inst: Costs):
 
     # Initialization.
     active_nodes: list[Subproblem] = [global_problem]
-    # just to indicate we are working with a list with the heap property
+    # we use a priority queue since we use the heuristic to quickly get good upper bounds
+    # this is best-first search
     heapify(active_nodes)
 
     start_opt = perf_counter_ns()
     timer: Timer = (0, 0)
+
+    heur_amount = 25
 
     # Main loop.
     while active_nodes:
@@ -245,9 +264,12 @@ def do_branch_and_bound(inst: Costs):
         # have a good upper bound, alllowing us to prune faster)
         problem = heappop(active_nodes)
 
+        heur_amount_i = round(math.ceil(random() < heur_amount)*max(heur_amount, 0.501))
+        heur_amount = max(0.25, heur_amount/1.3)
+
         # Process the node.
         try:
-            lb, ub, tour, timer = compute_bounds(inst, problem, best_solution, timer)
+            lb, ub, tour, timer = compute_bounds(inst, problem, best_solution, global_ub, timer, heur_amount_i)
             if problem.branch_e_idx != -1:
                 update_eta_sigma(pseudo_plus, pseudo_min, problem.upward_branch, problem.branch_e_idx, problem.parent_lb, problem.parent_branch_e_val, lb)
             # print(f"New suproblem: lb={lb}, ub={ub} (glb={global_lb}, gub={global_ub})")
@@ -266,37 +288,30 @@ def do_branch_and_bound(inst: Costs):
         new_global_lb = min(lb, active_nodes[0].parent_lb) if active_nodes else lb
 
         # if it's greater than global ub we've already found an optimum and we're just making things worse
-        if new_global_lb > global_lb and new_global_lb < global_ub:
+        if new_global_lb > global_lb and new_global_lb <= global_ub:
             global_lb = new_global_lb
-            print(f"Improved lower bound. (glb={global_lb}, gub={global_ub})")
+            print(f"Improved lower bound. (lb={lb} glb={global_lb}, gub={global_ub})")
 
         # Prune by bound
         if lb > global_ub:
-            # print("Pruning suproblem by worse lower bound...")
             continue
 
         # Prune by optimality
-        if lb == ub:
-            # print("Optimal...")
+        if lb == global_ub:
             continue
 
-        # split into two based on first non-integer edge
-        # print(f"current: {problem.model.char_vec_values()}")
-
+        # we use pseudocost branching to find the best variable to branch on
         branch_var_res = find_branch_variable(problem, edges_by_index, pseudo_plus, pseudo_min)
         if branch_var_res is None:
             # we've found an integer solution that the heuristic couldn't find
             print(f"Integer LP solution...")
             if lb < global_ub:
-                
                 tour = problem.model.get_tour(edges_by_index)
                 global_ub = lb
                 best_solution = tour
                 print(f"Improved upper bound {global_ub}.")
             continue
 
-            # problem.model.print_sol()
-            # raise RuntimeError("no variable to fix; this is a bug")
         branch_edge, branch_edge_idx, branch_e_value = branch_var_res
 
         problem_l, problem_r = branch_variable(
@@ -307,14 +322,11 @@ def do_branch_and_bound(inst: Costs):
 
     assert global_ub >= global_lb
 
-    # Check that the solution is truly feasible.
-    # if infeasible:
-    #    raise RuntimeError('solution is infeasible; this is a bug')
-
     opt_time = (perf_counter_ns() - start_opt) / 1e9
-    print(f"\t- integer optimal: {global_lb}")
+    print(f"\t- integer optimal: {length_tour(inst, best_solution)}")
     print(f"\t- optimal tour: {best_solution}")
-    print(f"Optimizing using B&B with cutting plane relaxation and Lin-Kernighan took {opt_time} s.")
+    timer_times = f"({timer[0]/1e9} s solving LP's. {timer[1]/1e9} s computing heuristics.)"
+    print(f"Optimizing using B&B with cutting plane relaxation and Lin-Kernighan took {opt_time} s. {timer_times}")
 
     # Return optimal solution.
     return global_ub, best_solution
