@@ -58,8 +58,6 @@ def get_edge_names(n: int):
     return names
 
 
-
-
 def edge_idx(lower_i, higher_j, n: int):
     """lower_i and higher_j must be of same dimension or one of them must be a scalar."""
     return lower_i * (2 * n - lower_i - 1) // 2 + (higher_j - lower_i - 1)
@@ -463,7 +461,7 @@ def run():
     # m_relax.optimize()
     # # m_relax.print_sol()
 
-    n, gg = parse_instance(Path('tsp/burma14.dat'))
+    n, gg = parse_instance(Path("tsp/burma14.dat"))
 
     print(get_cut_idx_arr(np.arange(n), n))
 

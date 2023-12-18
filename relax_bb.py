@@ -11,7 +11,9 @@ EdgeCosts = list[float]
 EdgeValue = tuple[float, list[tuple[int, int]]]
 
 
-def adjacency_matrix_from_vector(x_values: list[float], n: int) -> list[list[EdgeValue]]:
+def adjacency_matrix_from_vector(
+    x_values: list[float], n: int
+) -> list[list[EdgeValue]]:
     """Create an adjacency matrix from x_values"""
     if len(x_values) != (n * (n - 1)) // 2:
         raise ValueError("x_values does not have the correct length")
@@ -54,13 +56,12 @@ def get_edges_by_index(n: int) -> dict[int, tuple[int, int]]:
 def edge_idx(lower_i: int, higher_j: int, n: int):
     """Returns the index of the edge using our edge-index convention."""
     return lower_i * (2 * n - lower_i - 1) // 2 + (higher_j - lower_i - 1)
-    
 
 
 def get_edge_idxs_for_v(vertex: int, n: int):
-    """Return the indexes of the """
+    """Return the indexes of the"""
     lower_edges = [edge_idx(other_v, vertex, n) for other_v in range(0, vertex)]
-    higher_edges = [edge_idx(vertex, other_v, n) for other_v in range(vertex+1, n)]
+    higher_edges = [edge_idx(vertex, other_v, n) for other_v in range(vertex + 1, n)]
 
     return lower_edges + higher_edges
 
@@ -89,7 +90,6 @@ class Problem:
         return self.n, self.m_edges, self.all_cuts, self.coeff
 
 
-
 class UnknownVariableError(Exception):
     pass
 
@@ -99,12 +99,14 @@ class TSPModel:
     model: gp.Model
     p: Problem
 
-    def __init__(self, model: gp.Model, n: int, edge_costs: EdgeCosts, formulation: Formulation):
+    def __init__(
+        self, model: gp.Model, n: int, edge_costs: EdgeCosts, formulation: Formulation
+    ):
         self.formulation = formulation
         self.model = model
         m_edges = m_edges = (n * (n - 1)) // 2
         all_cuts = edge_idxs_for_all_v(n)
-        self.p = Problem(n, m_edges, all_cuts, [1]*len(all_cuts[0]), edge_costs)
+        self.p = Problem(n, m_edges, all_cuts, [1] * len(all_cuts[0]), edge_costs)
 
     def optimize_with_val(self):
         """RAISES InfeasibleRelaxation when unable to optimize."""
@@ -112,10 +114,12 @@ class TSPModel:
             raise ValueError("Only cutting plane formulation allowed!")
         self.model = optimize_cut_model(self)
         return self.model.ObjVal
-    
+
     def copy(self):
-        return TSPModel(self.model.copy(), self.p.n, self.p.edge_costs, self.formulation)
-    
+        return TSPModel(
+            self.model.copy(), self.p.n, self.p.edge_costs, self.formulation
+        )
+
     def copy_fix(self, edge_idx: int, fix_val: Literal[0, 1]):
         new_model = self.model.copy()
         char_e = new_model.getVarByName(f"char_{edge_idx}")
@@ -151,11 +155,11 @@ class TSPModel:
 
     def char_vec(self) -> list[float]:
         return self.char_vec_values()[1]
-    
+
     def char_vec_values(self) -> tuple[list[gp.Var], list[float]]:
         m_edges = self.p.m_edges
         var_list = []
-        x_values = [0.0]*m_edges
+        x_values = [0.0] * m_edges
         for e in range(m_edges):
             char_e = self.model.getVarByName(f"char_{e}")
             if char_e is None:
@@ -163,7 +167,6 @@ class TSPModel:
             var_list.append(char_e)
             x_values[e] = char_e.X
         return var_list, x_values
-    
 
     def get_tour(self, edge_by_index: Optional[dict[int, tuple[int, int]]] = None):
         """This only works when it is certain it is actually a tour!"""
@@ -211,9 +214,6 @@ class TSPModel:
 
         return tour
 
-        
-        
-
     def print_sol(self):
         char_vec, x_values = self.char_vec_values()
         edge_names = get_edge_names(self.p.n)
@@ -227,12 +227,10 @@ class TSPModel:
             if abs(x_val) > epsilon:
                 add_value = f" with value {x_val}"
                 print(f"\tedge {edge_names[e_i]} in solution{add_value}")
-                cost += edge_costs[e_i]*x_val
+                cost += edge_costs[e_i] * x_val
 
         print(f"Cost: {cost}")
         return char_vec, x_values
-    
-    
 
 
 def separation(
@@ -256,7 +254,7 @@ def separation(
     epsilon = 0.0000001
 
     n, _, cuts, coeff = p.all()
-    
+
     for v in range(n):
         # the columns are the vertices
         edges = cuts[v]
@@ -272,8 +270,10 @@ def separation(
     cut_weight, min_cut_edges = compute_min_cut(x_values, n)
     if cut_weight < 2 - epsilon:
         subtour_vars = [char_vec[e] for e in min_cut_edges]
-        coeff_subtour = [1]*len(subtour_vars)
-        model.addConstr(gp.LinExpr(coeff_subtour, subtour_vars) >= 2, name=f"x(delta(cut)>=2")
+        coeff_subtour = [1] * len(subtour_vars)
+        model.addConstr(
+            gp.LinExpr(coeff_subtour, subtour_vars) >= 2, name=f"x(delta(cut)>=2"
+        )
         return False
 
     return True
@@ -292,8 +292,9 @@ def compute_min_cut(x_values: list[float], n: int) -> tuple[float, list[int]]:
     return min_cut, cut_edges
 
 
-
-def sw_minimum_cut_phase(graph: list[list[EdgeValue]], a: int) -> tuple[int, int, float, list[tuple[int, int]]]:
+def sw_minimum_cut_phase(
+    graph: list[list[EdgeValue]], a: int
+) -> tuple[int, int, float, list[tuple[int, int]]]:
     graph_n = len(graph)
     A = [a]
     cut_edges: list[tuple[int, int]] = []
@@ -374,7 +375,9 @@ def optimize_cut_model(m: TSPModel):
 
         m.model.optimize()
         if m.model.Status != gp.GRB.OPTIMAL:
-            raise InfeasibleRelaxation(f"Infeasible model/could not optimize: {m.model.Status}!")
+            raise InfeasibleRelaxation(
+                f"Infeasible model/could not optimize: {m.model.Status}!"
+            )
 
         char_vec, x_values = m.char_vec_values()
         # this modifies the underlying model and adds constraints
@@ -394,12 +397,12 @@ def cutting_plane_model(n: int, edge_costs: EdgeCosts):
     model.setParam("LogToConsole", 0)
     print("Setting up cutting plane model...")
     start_build = perf_counter_ns()
-    
+
     m_edges = (n * (n - 1)) // 2
     char_vec = [model.addVar(lb=0, name=f"char_{e}") for e in range(m_edges)]
     z = gp.LinExpr(edge_costs, char_vec)
     model.setObjective(z, gp.GRB.MINIMIZE)
-    
+
     model.update()
     build_time = (perf_counter_ns() - start_build) / 1e9
     print(f"Took {build_time} s.")
@@ -460,7 +463,7 @@ def cutting_plane_model(n: int, edge_costs: EdgeCosts):
 #     cut_out_r = cuts_out[0]
 #     coeff_r_1_in = [1]*len(cut_in_r)
 #     coeff_r_1_out = [1]*len(cut_out_r)
-    
+
 #     for s in range(1, n):
 #         f_s = flow[s - 1]
 #         fs_r_out = [f_s[a] for a in cut_out_r]

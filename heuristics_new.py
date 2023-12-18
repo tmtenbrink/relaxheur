@@ -19,7 +19,6 @@ def parse_line(ln: str) -> list[int]:
     ...
 
 
-
 def parse_line(ln: str, as_float=False) -> Union[list[float], list[int]]:
     convert = float if as_float else int
     return list(map(lambda i: convert(i), ln.rstrip().split(" ")))
@@ -69,7 +68,6 @@ def length_tour(graph, tour):
     return length
 
 
-
 def nearest_neighbor(graph: list[list[int]], starting_node=None):
     if starting_node is None:
         starting_node = random.randrange(0, len(graph), 1)
@@ -80,7 +78,7 @@ def nearest_neighbor(graph: list[list[int]], starting_node=None):
     remaining_nodes.remove(starting_node)
     tour = [cur_node]
     # we need n-1 more nodes after starting with the random node
-    for _ in range(n-1):
+    for _ in range(n - 1):
         # get the costs for all nodes
         costs_row = graph[cur_node]
         # get a start index
@@ -124,26 +122,25 @@ def simulated_annealing(graph, T, r, L=1000, max_no_improvement=1e9):
     return S
 
 
-
-
 def dict_tour(tour: list[int]) -> dict[int, tuple[int, int]]:
     # adjacent edges in the tour
     d: dict[int, tuple[int, int]] = dict()
-    final_i = len(tour)-1
+    final_i = len(tour) - 1
     for i in range(len(tour)):
         if i == 0:
             other_i1 = 1
             other_i2 = final_i
         elif i == final_i:
             other_i1 = 0
-            other_i2 = final_i-1
+            other_i2 = final_i - 1
         else:
-            other_i1 = i+1
-            other_i2 = i-1
-        
+            other_i1 = i + 1
+            other_i2 = i - 1
+
         d[tour[i]] = (tour[other_i1], tour[other_i2])
-    
+
     return d
+
 
 def random_tour(n: int) -> list[int]:
     return shuffle_iter(range(n))
@@ -178,10 +175,14 @@ def exchange_gain(x_orig: Edge, y_repl: Edge, costs: list[list[float]]):
     return orig_cost - new_cost
 
 
-def pick_y0(n: int, d_tour: VertTourNghbs, t0: int, t1: int, costs: list[list[float]]) -> tuple[Optional[Edge], list[Edge], float]:
+def pick_y0(
+    n: int, d_tour: VertTourNghbs, t0: int, t1: int, costs: list[list[float]]
+) -> tuple[Optional[Edge], list[Edge], float]:
     in_tour = d_tour[t1]
     other_tour_nghb = in_tour[0] if in_tour[0] != t0 else in_tour[1]
-    possible_y0 = [(t1, i) for i in range(n) if i != t0 and i != t1 and i != other_tour_nghb]
+    possible_y0 = [
+        (t1, i) for i in range(n) if i != t0 and i != t1 and i != other_tour_nghb
+    ]
 
     x0 = (t0, t1)
     for maybe_y0 in possible_y0:
@@ -193,10 +194,9 @@ def pick_y0(n: int, d_tour: VertTourNghbs, t0: int, t1: int, costs: list[list[fl
     return None, possible_y0, -1
 
 
-
 def d_tour_to_node_adj_dict(n: int, d_tour: VertTourNghbs) -> VertNghbs:
     node_edges = dict[int, set[int]]()
-    
+
     for t in d_tour:
         node_edges[t] = set(d_tour[t])
 
@@ -221,11 +221,17 @@ def copy_node_edges(node_edges: VertNghbs) -> VertNghbs:
     node_edge_copy = dict()
     for t in node_edges:
         node_edge_copy[t] = node_edges[t].copy()
-    
+
     return node_edge_copy
 
 
-def exchange_edges(node_edges: VertNghbs, x_remove: Edge, y_repl: Edge, copy=True, require_existence=True) -> VertNghbs:
+def exchange_edges(
+    node_edges: VertNghbs,
+    x_remove: Edge,
+    y_repl: Edge,
+    copy=True,
+    require_existence=True,
+) -> VertNghbs:
     if copy:
         node_edges = copy_node_edges(node_edges)
     t_x0, t_x1 = x_remove
@@ -269,8 +275,13 @@ def vert_ngbhs_to_tour(v_n: VertNghbs) -> list[int]:
 
     return seen_order
 
-def try_is_tour(n: int, tour_n_a_dict: VertNghbs, x_remove: Edge, y_repl: Edge) -> tuple[bool, list[int]]:
-    maybe_tour_n_a_dict = exchange_edges(tour_n_a_dict, x_remove, y_repl, require_existence=False)
+
+def try_is_tour(
+    n: int, tour_n_a_dict: VertNghbs, x_remove: Edge, y_repl: Edge
+) -> tuple[bool, list[int]]:
+    maybe_tour_n_a_dict = exchange_edges(
+        tour_n_a_dict, x_remove, y_repl, require_existence=False
+    )
     is_tour, maybe_tour = is_node_edges_tour(n, maybe_tour_n_a_dict)
     return is_tour, maybe_tour
 
@@ -289,11 +300,12 @@ XResult = Optional[tuple[Edge, list[int], Edge]]
 Tours = dict[int, tuple[VertNghbs, float]]
 TourResult = tuple[list[int], float]
 
+
 # Note that this object is used contextually (i.e. whether it is for next_x, next_y, etc.)
 @dataclass
 class Iteration:
     i: int
-    next_sel: Literal['x', 'y']
+    next_sel: Literal["x", "y"]
     # Whether in previous step it was already generated (only applicable to xi)
     already_xi: Optional[XResult]
     used_x: UsedEdges
@@ -303,24 +315,24 @@ class Iteration:
     tours: Tours
     bt: BaseTour
     result: Optional[TourResult]
-    
+
     def with_i(self, i: int):
         self.i = i
         return self
-    
-    def with_nxt(self, nxt: Literal['x', 'y']):
+
+    def with_nxt(self, nxt: Literal["x", "y"]):
         self.next_sel = nxt
         return self
 
     def var_next_x(self):
         return self.i, self.bt, self.sel_y, self.used_x, self.tours
-    
+
     def var_next_y(self):
         return self.i, self.bt, self.sel_x, self.sel_y, self.used_y, self.tours
-    
+
     def var_eva_x(self):
         return self.i, self.bt, self.sel_x, self.used_x, self.tours
-    
+
     def var_eva_y(self):
         return self.i, self.bt, self.sel_x, self.sel_y, self.used_y, self.tours
 
@@ -331,9 +343,9 @@ def next_x(iter: Iteration) -> Optional[tuple[Edge, list[int], Edge]]:
         t_start = bt.tbase
         cur_tgraph = bt.tgraph
     else:
-        yim1 = sel_y[i-1]
+        yim1 = sel_y[i - 1]
         t_start = yim1[1]
-        cur_tgraph, _ = tours[i-1]
+        cur_tgraph, _ = tours[i - 1]
 
     base_nghbs = bt.d_tour[t_start]
     for nghb in base_nghbs:
@@ -361,8 +373,7 @@ def next_x(iter: Iteration) -> Optional[tuple[Edge, list[int], Edge]]:
         return maybe_x, maybe_tour, joined
 
     return None
-        
-    
+
 
 def next_y(iter: Iteration) -> Optional[tuple[Edge, float, XResult]]:
     i, bt, sel_x, sel_y, used_y, tours = iter.var_next_y()
@@ -370,8 +381,8 @@ def next_y(iter: Iteration) -> Optional[tuple[Edge, float, XResult]]:
         partial_gain_im1 = 0
         cur_tgraph = bt.tgraph
     else:
-        cur_tgraph, partial_gain_im1 = tours[i-1]
-    
+        cur_tgraph, partial_gain_im1 = tours[i - 1]
+
     xi = sel_x[i]
     y_start = xi[1]
     y_start_nghbs = bt.d_tour[y_start]
@@ -386,7 +397,7 @@ def next_y(iter: Iteration) -> Optional[tuple[Edge, float, XResult]]:
         # condition (a)
         if i <= 1 and edge_in_edge_list(maybe_yi, used_y.get(i, [])):
             continue
-        
+
         # condition (b)
         gain_i = exchange_gain(xi, maybe_yi, bt.costs)
         if partial_gain_im1 + gain_i <= 0:
@@ -401,7 +412,7 @@ def next_y(iter: Iteration) -> Optional[tuple[Edge, float, XResult]]:
             sel_y[i] = maybe_yi
             yi_tgraph = exchange_edges(cur_tgraph, xi, maybe_yi)
             tours[i] = (yi_tgraph, -1)
-            maybe_xi1_res = next_x(iter.with_i(i+1))
+            maybe_xi1_res = next_x(iter.with_i(i + 1))
             if maybe_xi1_res is None:
                 continue
         else:
@@ -438,7 +449,7 @@ def evaluate_x(iter: Iteration) -> Optional[Iteration]:
             if i == 1:
                 partial_gain_im1 = 0
             else:
-                _, partial_gain_im1 = tours[i-1]
+                _, partial_gain_im1 = tours[i - 1]
 
             join_gain_i = exchange_gain(xi, joined_i, bt.costs)
 
@@ -448,31 +459,31 @@ def evaluate_x(iter: Iteration) -> Optional[Iteration]:
 
         sel_x[i] = xi
         add_create_edge(i, used_x, xi)
-        return iter.with_nxt('y')
-    
+        return iter.with_nxt("y")
+
     if i == 1:
         used_x.pop(1, None)
         # used_y.pop(0, None)
-        return iter.with_i(0).with_nxt('y')
+        return iter.with_i(0).with_nxt("y")
     elif i == 0:
         # exhausted all x_0 so go to different t_base
         return None
     else:
         raise ValueError("x_i should exist for higher i!")
-    
+
 
 def evaluate_y(iter: Iteration) -> Iteration:
     i, bt, sel_x, sel_y, used_y, tours = iter.var_eva_y()
     yi_result = next_y(iter)
     # print(f"after next y nxt={iter.next_sel} i={iter.i} used_x={iter.used_x} used_y={iter.used_y} sel_x={iter.sel_x} sel_y={iter.sel_y}")
-    
+
     if yi_result is not None:
         xi = sel_x[i]
         yi, gain_i, xi1_res = yi_result
 
         sel_y[i] = yi
         add_create_edge(i, used_y, yi)
-        
+
         if i == 0:
             tgraph_im1 = bt.tgraph
             partial_gain_im1 = 0
@@ -485,28 +496,32 @@ def evaluate_y(iter: Iteration) -> Iteration:
 
         iter.already_xi = xi1_res
         # print(f"before x i+1 nxt={iter.next_sel} i={iter.i} used_x={iter.used_x} used_y={iter.used_y} sel_x={iter.sel_x} sel_y={iter.sel_y}")
-        new_iter = iter.with_i(i+1).with_nxt('x')
+        new_iter = iter.with_i(i + 1).with_nxt("x")
         # print(f"incr i with nxt=x i={iter.i} used_x={iter.used_x} used_y={iter.used_y} sel_x={iter.sel_x} sel_y={iter.sel_y}")
         return new_iter
-    
+
     if i >= 2:
         # since we just tried for y_1 we know no more exist
-        return iter.with_i(1).with_nxt('x')
+        return iter.with_i(1).with_nxt("x")
     elif i == 1:
         used_y.pop(1, None)
-        return iter.with_i(1).with_nxt('x')
+        return iter.with_i(1).with_nxt("x")
     else:
         used_y.pop(0, None)
-        return iter.with_i(0).with_nxt('x')
-    
+        return iter.with_i(0).with_nxt("x")
 
-def improve_tour(n: int, tbase: int, tour: list[int], costs: list[list[float]]) -> Optional[TourResult]:
+
+def improve_tour(
+    n: int, tbase: int, tour: list[int], costs: list[list[float]]
+) -> Optional[TourResult]:
     d_tour = dict_tour(tour)
     tgraph = d_tour_to_node_adj_dict(n, d_tour)
     bt = BaseTour(n, tbase, tour, d_tour, tgraph, costs)
 
     # Very simple iterative implementation of the recursive algorithm, apologies for the ugly code
-    base_iter = Iteration(0, 'x', None, dict(), dict(), dict(), dict(), dict(), bt, None)
+    base_iter = Iteration(
+        0, "x", None, dict(), dict(), dict(), dict(), dict(), bt, None
+    )
     queue: list[Iteration] = [base_iter]
 
     k = 0
@@ -514,9 +529,11 @@ def improve_tour(n: int, tbase: int, tour: list[int], costs: list[list[float]]) 
         print(f"k {k}")
         k += 1
         current_iter = queue.pop()
-        print(f"cur nxt={current_iter.next_sel} i={current_iter.i} used_x={current_iter.used_x} used_y={current_iter.used_y} sel_x={current_iter.sel_x} sel_y={current_iter.sel_y} tours={current_iter.tours}")
+        print(
+            f"cur nxt={current_iter.next_sel} i={current_iter.i} used_x={current_iter.used_x} used_y={current_iter.used_y} sel_x={current_iter.sel_x} sel_y={current_iter.sel_y} tours={current_iter.tours}"
+        )
         # print(f"i {current_iter.i}")
-        if current_iter.next_sel == 'x':
+        if current_iter.next_sel == "x":
             eval_res = evaluate_x(current_iter)
             # print(eval_res)
 
@@ -532,8 +549,7 @@ def improve_tour(n: int, tbase: int, tour: list[int], costs: list[list[float]]) 
             eval_res = evaluate_y(current_iter)
             queue.append(eval_res)
 
-    return 
-
+    return
 
 
 def lin_kernighan(costs: list[list[float]]):
@@ -568,7 +584,7 @@ def lin_kernighan(costs: list[list[float]]):
 
 def run():
     # inst_path = get_inst_path()
-    inst_path = Path('tsp/burma14.dat')
+    inst_path = Path("tsp/burma14.dat")
     graph_l = parse_as_adj_matrix(inst_path)
 
     print("Value of heuristic")
@@ -587,14 +603,14 @@ def run():
     lin_time = (perf_counter_ns() - start_time) / 1e9
     lin_length = length_tour(graph_l, lin_tour)
     print(f"- Lin-Kernighan: {lin_length}, {lin_time}s")
-    
+
     # # # Simulated Annealing1
     # start_time = perf_counter_ns()
     # annealing_tour = simulated_annealing(graph_l, T=100, r=0.95, L=1000)
     # annealing_time = (perf_counter_ns() - start_time) / 1e9
     # annealing_length = length_tour(graph_l, annealing_tour)
     # print(f"- Simulated Annealing: {annealing_length}, {annealing_time}s  (L=1000)")
-    
+
     # # Simulated Annealing2
     # start_time = perf_counter_ns()
     # annealing_tour = simulated_annealing(
@@ -605,6 +621,7 @@ def run():
     # print(
     #     f"- Simulated Annealing: {annealing_length}, {annealing_time}s  (L=10000, max_no_improvement=100)"
     # )
+
 
 if __name__ == "__main__":
     run()

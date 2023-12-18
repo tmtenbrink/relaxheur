@@ -35,7 +35,7 @@ def branch_variable(var: gp.Var, m: gp.Model) -> tuple[gp.Model, gp.Model]:
 
 def check_integral(variables: list[gp.Var], epsilon=0.001):
     var_arr = np.array([v.x for v in variables])
-    dist = np.abs(np.round(var_arr)-var_arr)
+    dist = np.abs(np.round(var_arr) - var_arr)
     return np.all(dist < epsilon)
 
 
@@ -62,16 +62,17 @@ def round_method(x):
     return math.ceil(x)
 
 
-def compute_pseudoscore(index_j: int, sigma_j: list[float], eta_j: list[float], initialized_j: list[int]):
+def compute_pseudoscore(
+    index_j: int, sigma_j: list[float], eta_j: list[float], initialized_j: list[int]
+):
     uninitialized = eta_j[index_j] == 0
     if uninitialized:
         if not initialized_j:
             return 1
 
-        
-        sigmas_d_etas = [sigma_j[j]/eta_j[j] for j in initialized_j]
+        sigmas_d_etas = [sigma_j[j] / eta_j[j] for j in initialized_j]
 
-        return sum(sigmas_d_etas)/len(initialized_j)
+        return sum(sigmas_d_etas) / len(initialized_j)
 
     return sigma_j[index_j] / eta_j[index_j]
 
@@ -88,11 +89,13 @@ class Solution:
     initialized_j_min: list
 
     def __init__(self):
-        self.no_solution = ([], float('inf'))
+        self.no_solution = ([], float("inf"))
         self.initialized_j_plus = []
         self.initialized_j_min = []
 
-    def pseudocost(self, x_values: list[gp.Var], mu=1 / 6, epsilon=0.0001) -> tuple[gp.Var, int]:
+    def pseudocost(
+        self, x_values: list[gp.Var], mu=1 / 6, epsilon=0.0001
+    ) -> tuple[gp.Var, int]:
         best_j = -1
         best_j_score = float("-inf")
         for j, v in enumerate(x_values):
@@ -101,8 +104,12 @@ class Solution:
             if frac < epsilon:
                 continue
 
-            pseudo_plus = compute_pseudoscore(j, self.sigma_j_plus, self.eta_j_plus, self.initialized_j_plus)
-            pseudo_min = compute_pseudoscore(j, self.sigma_j_min, self.eta_j_min, self.initialized_j_min)
+            pseudo_plus = compute_pseudoscore(
+                j, self.sigma_j_plus, self.eta_j_plus, self.initialized_j_plus
+            )
+            pseudo_min = compute_pseudoscore(
+                j, self.sigma_j_min, self.eta_j_min, self.initialized_j_min
+            )
 
             f_j_plus = math.ceil(v.X) - v.X
             f_j_min = v.X - math.floor(v.X)
@@ -129,13 +136,13 @@ class Solution:
         C = [(baseline_value, m)]
 
         var_len = len(m.vars)
-        self.sigma_j_plus = [0.0]*var_len
-        self.eta_j_plus = [0.0]*var_len
-        self.sigma_j_min = [0.0]*var_len
-        self.eta_j_min = [0.0]*var_len
+        self.sigma_j_plus = [0.0] * var_len
+        self.eta_j_plus = [0.0] * var_len
+        self.sigma_j_min = [0.0] * var_len
+        self.eta_j_min = [0.0] * var_len
 
-        upper = float('inf')
-        lower = float('-inf')
+        upper = float("inf")
+        lower = float("-inf")
         best_solution = None
         bound_found = False
         order = -1
@@ -176,15 +183,21 @@ class Solution:
 
                 if not right_m.Status == gp.GRB.INFEASIBLE:
                     right_obj = float(right_m.objective_value)
-                    self.update_eta_sigma(True, var_j, problem_obj, branch_var, right_obj)
+                    self.update_eta_sigma(
+                        True, var_j, problem_obj, branch_var, right_obj
+                    )
                     to_append = (right_obj, right_m, True, var_j, problem_obj)
                     if bound_found:
-                        bisect.insort(C, (right_obj, right_m), key=lambda x: order * x[0])
+                        bisect.insort(
+                            C, (right_obj, right_m), key=lambda x: order * x[0]
+                        )
                     else:
                         C.append(to_append)
                 if not left_m.status == gp.GRB.INFEASIBLE:
                     left_obj = float(left_m.objective_value)
-                    self.update_eta_sigma(False, var_j, problem_obj, branch_var, left_obj)
+                    self.update_eta_sigma(
+                        False, var_j, problem_obj, branch_var, left_obj
+                    )
                     to_append = (left_obj, left_m, False, var_j, problem_obj)
                     if bound_found:
                         bisect.insort(C, (left_obj, left_m), key=lambda x: order * x[0])
@@ -196,7 +209,14 @@ class Solution:
 
         return ([x.x for x in best_solution.vars], best_solution.objective_value)
 
-    def update_eta_sigma(self, is_upward: bool, var_j: int, parent_obj: float, branch_var: gp.Var, obj_val: float):
+    def update_eta_sigma(
+        self,
+        is_upward: bool,
+        var_j: int,
+        parent_obj: float,
+        branch_var: gp.Var,
+        obj_val: float,
+    ):
         if is_upward:
             f_j_plus = math.ceil(branch_var.X) - branch_var.X
             p_i_plus = (obj_val - parent_obj) / f_j_plus
@@ -215,4 +235,3 @@ class Solution:
             self.sigma_j_min[var_j] += p_i_min
 
         return None
-

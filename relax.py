@@ -9,6 +9,7 @@ import gurobipy as gp
 Costs = list[list[float]]
 EdgeCosts = list[float]
 
+
 def parse_line(ln: str) -> list[float]:
     return list(map(lambda i: float(i), ln.rstrip().split(" ")))
 
@@ -37,7 +38,9 @@ def parse_as_adj_matrix(inst_path: Path) -> tuple[int, Costs]:
 EdgeValue = tuple[float, list[tuple[int, int]]]
 
 
-def adjacency_matrix_from_vector(x_values: list[float], n: int) -> list[list[EdgeValue]]:
+def adjacency_matrix_from_vector(
+    x_values: list[float], n: int
+) -> list[list[EdgeValue]]:
     """Create an adjacency matrix from x_values"""
     if len(x_values) != (n * (n - 1)) // 2:
         raise ValueError("x_values does not have the correct length")
@@ -56,16 +59,15 @@ def adjacency_matrix_from_vector(x_values: list[float], n: int) -> list[list[Edg
 def compute_edge_costs(costs: Costs) -> EdgeCosts:
     n = len(costs)
     m_edges = (n * (n - 1)) // 2
-    edge_costs = [0.0]*m_edges
+    edge_costs = [0.0] * m_edges
 
     for row_num, row in enumerate(costs):
         target_start = row_num * (2 * n - row_num - 1) // 2
-        target_end = target_start + (n - row_num  - 1)
+        target_end = target_start + (n - row_num - 1)
         for i, e in enumerate(range(target_start, target_end)):
-            edge_costs[e] = row[row_num+1+i]
+            edge_costs[e] = row[row_num + 1 + i]
 
     return edge_costs
-
 
 
 def get_edge_names(n: int):
@@ -83,13 +85,12 @@ def get_edge_names(n: int):
 def edge_idx(lower_i: int, higher_j: int, n: int):
     """Returns the index of the edge using our edge-index convention."""
     return lower_i * (2 * n - lower_i - 1) // 2 + (higher_j - lower_i - 1)
-    
 
 
 def get_edge_idxs_for_v(vertex: int, n: int):
-    """Return the indexes of the """
+    """Return the indexes of the"""
     lower_edges = [edge_idx(other_v, vertex, n) for other_v in range(0, vertex)]
-    higher_edges = [edge_idx(vertex, other_v, n) for other_v in range(vertex+1, n)]
+    higher_edges = [edge_idx(vertex, other_v, n) for other_v in range(vertex + 1, n)]
 
     return lower_edges + higher_edges
 
@@ -98,10 +99,16 @@ def get_arc_idxs_for_v(vertex: int, n: int, incoming: bool):
     lower_add = 0 if incoming else 1
     higher_add = 1 - lower_add
 
-    lower_edges = [2*edge_idx(other_v, vertex, n)+lower_add for other_v in range(0, vertex)]
-    higher_edges = [2*edge_idx(vertex, other_v, n)+higher_add for other_v in range(vertex+1, n)]
+    lower_edges = [
+        2 * edge_idx(other_v, vertex, n) + lower_add for other_v in range(0, vertex)
+    ]
+    higher_edges = [
+        2 * edge_idx(vertex, other_v, n) + higher_add
+        for other_v in range(vertex + 1, n)
+    ]
 
     return lower_edges + higher_edges
+
 
 def get_in_arc_idxs_for_v(vertex: int, n: int):
     """Return the indexes of the incoming arcs for a vertex, i.e. where v is the head (so second vertex in the ordered pair)."""
@@ -137,7 +144,6 @@ class Problem:
         return self.n, self.m_edges, self.all_cuts, self.coeff
 
 
-
 class UnknownVariableError(Exception):
     pass
 
@@ -153,7 +159,7 @@ class TSPModel:
         self.model = model
         m_edges = m_edges = (n * (n - 1)) // 2
         all_cuts = edge_idxs_for_all_v(n)
-        self.p = Problem(n, m_edges, all_cuts, [1]*len(all_cuts[0]), edge_costs)
+        self.p = Problem(n, m_edges, all_cuts, [1] * len(all_cuts[0]), edge_costs)
 
     def optimize(self):
         start_opt = perf_counter_ns()
@@ -185,7 +191,7 @@ class TSPModel:
     def char_vec_values(self) -> tuple[list[gp.Var], list[float]]:
         m_edges = self.p.m_edges
         var_list = []
-        x_values = [0.0]*m_edges
+        x_values = [0.0] * m_edges
         for e in range(m_edges):
             char_e = self.model.getVarByName(f"char_{e}")
             if char_e is None:
@@ -207,11 +213,10 @@ class TSPModel:
             if abs(x_val) > epsilon:
                 add_value = f" with value {x_val}"
                 print(f"\tedge {edge_names[e_i]} in solution{add_value}")
-                cost += edge_costs[e_i]*x_val
+                cost += edge_costs[e_i] * x_val
 
         print(f"Cost: {cost}")
         return char_vec, x_values
-    
 
 
 def separation(
@@ -235,7 +240,7 @@ def separation(
     epsilon = 0.0000001
 
     n, _, cuts, coeff = p.all()
-    
+
     for v in range(n):
         # the columns are the vertices
         edges = cuts[v]
@@ -251,8 +256,10 @@ def separation(
     cut_weight, min_cut_edges = compute_min_cut(x_values, n)
     if cut_weight < 2 - epsilon:
         subtour_vars = [char_vec[e] for e in min_cut_edges]
-        coeff_subtour = [1]*len(subtour_vars)
-        model.addConstr(gp.LinExpr(coeff_subtour, subtour_vars) >= 2, name=f"x(delta(cut)>=2")
+        coeff_subtour = [1] * len(subtour_vars)
+        model.addConstr(
+            gp.LinExpr(coeff_subtour, subtour_vars) >= 2, name=f"x(delta(cut)>=2"
+        )
         return False
 
     return True
@@ -271,8 +278,9 @@ def compute_min_cut(x_values: list[float], n: int) -> tuple[float, list[int]]:
     return min_cut, cut_edges
 
 
-
-def sw_minimum_cut_phase(graph: list[list[EdgeValue]], a: int) -> tuple[int, int, float, list[tuple[int, int]]]:
+def sw_minimum_cut_phase(
+    graph: list[list[EdgeValue]], a: int
+) -> tuple[int, int, float, list[tuple[int, int]]]:
     graph_n = len(graph)
     A = [a]
     cut_edges: list[tuple[int, int]] = []
@@ -335,7 +343,7 @@ def sw_minimum_cut(graph: list[list[EdgeValue]]):
         phase += 1
 
     return min_cut, best_edge_list
-    
+
 
 def optimize_cut_model(m: TSPModel):
     max_i = 100000
@@ -367,20 +375,26 @@ def extended_formulation(n: int, edge_costs: EdgeCosts):
     m_edges = (n * (n - 1)) // 2
     # for i<j (i, j) is the (n-1 + n-2 + ... + n - i) + (j - i -1)th element
     # i.e. index is i(2n-i-1)/2 + (j-i-1)
-    char_vec = [model.addVar(lb=0, name=f"char_{e}", vtype=gp.GRB.BINARY) for e in range(m_edges)]
+    char_vec = [
+        model.addVar(lb=0, name=f"char_{e}", vtype=gp.GRB.BINARY)
+        for e in range(m_edges)
+    ]
     num_arcs = 2 * m_edges
     # rows are vertices without r
     # columns are the arcs, with same indexing as above
     # but where (i, j) and (j, i) follow each other (so edge_index * 2 for (i, j)
     # with still i<j
-    flow: list[list[gp.Var]] = [[model.addVar(lb=0, name=f"f_{s}({a})") for a in range(num_arcs)] for s in range(1, n)]
+    flow: list[list[gp.Var]] = [
+        [model.addVar(lb=0, name=f"f_{s}({a})") for a in range(num_arcs)]
+        for s in range(1, n)
+    ]
     z = gp.LinExpr(edge_costs, char_vec)
     model.setObjective(z, gp.GRB.MINIMIZE)
 
     # each column is all the vertices other than the vertex corresponding to column
     # so (n-1), n array
     cut_arr = edge_idxs_for_all_v(n)
-    coeff_1 = [1]*len(cut_arr[0])
+    coeff_1 = [1] * len(cut_arr[0])
     for v in range(n):
         v_cut = cut_arr[v]
         cut_x = [char_vec[e] for e in v_cut]
@@ -391,9 +405,9 @@ def extended_formulation(n: int, edge_costs: EdgeCosts):
 
     cut_in_r = cuts_in[0]
     cut_out_r = cuts_out[0]
-    coeff_r_1_in = [1]*len(cut_in_r)
-    coeff_r_1_out = [1]*len(cut_out_r)
-    
+    coeff_r_1_in = [1] * len(cut_in_r)
+    coeff_r_1_out = [1] * len(cut_out_r)
+
     for s in range(1, n):
         f_s = flow[s - 1]
         fs_r_out = [f_s[a] for a in cut_out_r]
@@ -405,13 +419,12 @@ def extended_formulation(n: int, edge_costs: EdgeCosts):
             name=f"f_{s}(delta_out(r))-f_{s}(delta_in(r))>=2",
         )
 
-
     for s in range(1, n):
         f_s = flow[s - 1]
         # we make sure we get arrays correspond to the right index of the char. vector
         for e in range(m_edges):
-            a1 = 2*e
-            a2 = 2*e + 1
+            a1 = 2 * e
+            a2 = 2 * e + 1
             model.addConstr(f_s[a1] - char_vec[e] <= 0, name=f"f_{a1}<=x({a1})")
             model.addConstr(f_s[a2] - char_vec[e] <= 0, name=f"f_{a2}<=x({a2})")
 
@@ -422,8 +435,8 @@ def extended_formulation(n: int, edge_costs: EdgeCosts):
 
             cut_out_v = cuts_out[other_v]
             cut_in_v = cuts_in[other_v]
-            coeff_v_1_in = [1]*len(cut_in_v)
-            coeff_v_1_out = [1]*len(cut_out_v)
+            coeff_v_1_in = [1] * len(cut_in_v)
+            coeff_v_1_out = [1] * len(cut_out_v)
             fs_v_out = [f_s[v] for v in cut_out_v]
             fs_v_in = [f_s[v] for v in cut_in_v]
 
@@ -441,7 +454,6 @@ def extended_formulation(n: int, edge_costs: EdgeCosts):
     return TSPModel(model, n, edge_costs, Formulation.EXTENDED)
 
 
-
 def cutting_plane_model(n: int, edge_costs: EdgeCosts):
     model = gp.Model("cutting plane")
     # set to dual simplex
@@ -450,12 +462,12 @@ def cutting_plane_model(n: int, edge_costs: EdgeCosts):
     model.setParam("LogToConsole", 0)
     print("Setting up cutting plane model...")
     start_build = perf_counter_ns()
-    
+
     m_edges = (n * (n - 1)) // 2
     char_vec = [model.addVar(lb=0, name=f"char_{e}") for e in range(m_edges)]
     z = gp.LinExpr(edge_costs, char_vec)
     model.setObjective(z, gp.GRB.MINIMIZE)
-    
+
     model.update()
     build_time = (perf_counter_ns() - start_build) / 1e9
     print(f"Took {build_time} s.")
@@ -464,7 +476,7 @@ def cutting_plane_model(n: int, edge_costs: EdgeCosts):
 
 def run():
     # inst_path = get_inst_path()
-    inst_path = Path('tsp/gr24.dat')
+    inst_path = Path("tsp/gr24.dat")
 
     n, graph_l = parse_as_adj_matrix(inst_path)
     edge_costs = compute_edge_costs(graph_l)
@@ -472,7 +484,7 @@ def run():
     cut_model = cutting_plane_model(n, edge_costs)
 
     ext_model = extended_formulation(n, edge_costs)
-    
+
     cut_model.optimize()
     ext_model.optimize()
 

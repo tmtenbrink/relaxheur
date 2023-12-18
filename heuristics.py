@@ -19,7 +19,6 @@ def parse_line(ln: str) -> list[int]:
     ...
 
 
-
 def parse_line(ln: str, as_float=False) -> Union[list[float], list[int]]:
     convert = float if as_float else int
     return list(map(lambda i: convert(i), ln.rstrip().split(" ")))
@@ -69,7 +68,6 @@ def length_tour(graph, tour):
     return length
 
 
-
 def nearest_neighbor(graph: list[list[int]], starting_node=None):
     if starting_node is None:
         starting_node = random.randrange(0, len(graph), 1)
@@ -80,7 +78,7 @@ def nearest_neighbor(graph: list[list[int]], starting_node=None):
     remaining_nodes.remove(starting_node)
     tour = [cur_node]
     # we need n-1 more nodes after starting with the random node
-    for _ in range(n-1):
+    for _ in range(n - 1):
         # get the costs for all nodes
         costs_row = graph[cur_node]
         # get a start index
@@ -124,26 +122,25 @@ def simulated_annealing(graph, T, r, L=1000, max_no_improvement=1e9):
     return S
 
 
-
-
 def dict_tour(tour: list[int]) -> dict[int, tuple[int, int]]:
     # adjacent edges in the tour
     d: dict[int, tuple[int, int]] = dict()
-    final_i = len(tour)-1
+    final_i = len(tour) - 1
     for i in range(len(tour)):
         if i == 0:
             other_i1 = 1
             other_i2 = final_i
         elif i == final_i:
             other_i1 = 0
-            other_i2 = final_i-1
+            other_i2 = final_i - 1
         else:
-            other_i1 = i+1
-            other_i2 = i-1
-        
+            other_i1 = i + 1
+            other_i2 = i - 1
+
         d[tour[i]] = (tour[other_i1], tour[other_i2])
-    
+
     return d
+
 
 def random_tour(n: int) -> list[int]:
     return shuffle_iter(range(n))
@@ -181,10 +178,14 @@ def exchange_gain(x_orig: Edge, y_repl: Edge, costs: list[list[float]]):
     return orig_cost - new_cost
 
 
-def pick_y0(n: int, d_tour: VertTourNghbs, t0: int, t1: int, costs: list[list[float]]) -> tuple[Optional[Edge], list[Edge], float]:
+def pick_y0(
+    n: int, d_tour: VertTourNghbs, t0: int, t1: int, costs: list[list[float]]
+) -> tuple[Optional[Edge], list[Edge], float]:
     in_tour = d_tour[t1]
     other_tour_nghb = in_tour[0] if in_tour[0] != t0 else in_tour[1]
-    possible_y0 = [(t1, i) for i in range(n) if i != t0 and i != t1 and i != other_tour_nghb]
+    possible_y0 = [
+        (t1, i) for i in range(n) if i != t0 and i != t1 and i != other_tour_nghb
+    ]
 
     x0 = (t0, t1)
     for maybe_y0 in possible_y0:
@@ -196,10 +197,9 @@ def pick_y0(n: int, d_tour: VertTourNghbs, t0: int, t1: int, costs: list[list[fl
     return None, possible_y0, -1
 
 
-
 def d_tour_to_node_adj_dict(n: int, d_tour: VertTourNghbs) -> VertNghbs:
     node_edges = dict[int, set[int]]()
-    
+
     for t in d_tour:
         node_edges[t] = set(d_tour[t])
 
@@ -224,11 +224,17 @@ def copy_node_edges(node_edges: VertNghbs) -> VertNghbs:
     node_edge_copy = dict()
     for t in node_edges:
         node_edge_copy[t] = node_edges[t].copy()
-    
+
     return node_edge_copy
 
 
-def exchange_edges(node_edges: VertNghbs, x_remove: Edge, y_repl: Edge, copy=True, require_existence=True) -> VertNghbs:
+def exchange_edges(
+    node_edges: VertNghbs,
+    x_remove: Edge,
+    y_repl: Edge,
+    copy=True,
+    require_existence=True,
+) -> VertNghbs:
     if copy:
         node_edges = copy_node_edges(node_edges)
     t_x0, t_x1 = x_remove
@@ -272,8 +278,13 @@ def vert_ngbhs_to_tour(v_n: VertNghbs) -> list[int]:
 
     return seen_order
 
-def try_is_tour(n: int, tour_n_a_dict: VertNghbs, x_remove: Edge, y_repl: Edge) -> tuple[bool, list[int]]:
-    maybe_tour_n_a_dict = exchange_edges(tour_n_a_dict, x_remove, y_repl, require_existence=False)
+
+def try_is_tour(
+    n: int, tour_n_a_dict: VertNghbs, x_remove: Edge, y_repl: Edge
+) -> tuple[bool, list[int]]:
+    maybe_tour_n_a_dict = exchange_edges(
+        tour_n_a_dict, x_remove, y_repl, require_existence=False
+    )
     is_tour, maybe_tour = is_node_edges_tour(n, maybe_tour_n_a_dict)
     return is_tour, maybe_tour
 
@@ -292,15 +303,21 @@ class TourState:
 XResult = Optional[tuple[Edge, list[int], Edge]]
 
 
-def next_x(i: int, used_x: UsedEdges, sel_y: SelectedEdges, ts: TourState, tgraph: Optional[VertNghbs] = None) -> Optional[tuple[Edge, list[int], Edge]]:
+def next_x(
+    i: int,
+    used_x: UsedEdges,
+    sel_y: SelectedEdges,
+    ts: TourState,
+    tgraph: Optional[VertNghbs] = None,
+) -> Optional[tuple[Edge, list[int], Edge]]:
     if i == 0:
         t_start = ts.tbase
         cur_tgraph = ts.tgraph
     else:
-        yim1 = sel_y[i-1]
+        yim1 = sel_y[i - 1]
         t_start = yim1[1]
         if tgraph is None:
-            cur_tgraph, _ = ts.iter[i-1]
+            cur_tgraph, _ = ts.iter[i - 1]
         else:
             cur_tgraph = tgraph
 
@@ -330,16 +347,22 @@ def next_x(i: int, used_x: UsedEdges, sel_y: SelectedEdges, ts: TourState, tgrap
         return maybe_x, maybe_tour, joined
 
     return None
-        
-    
 
-def next_y(i: int, used_x: UsedEdges, used_y: UsedEdges, sel_x: SelectedEdges, sel_y: SelectedEdges,  ts: TourState) -> Optional[tuple[Edge, float, XResult]]:
+
+def next_y(
+    i: int,
+    used_x: UsedEdges,
+    used_y: UsedEdges,
+    sel_x: SelectedEdges,
+    sel_y: SelectedEdges,
+    ts: TourState,
+) -> Optional[tuple[Edge, float, XResult]]:
     if i == 0:
         partial_gain_im1 = 0
         cur_tgraph = ts.tgraph
     else:
-        cur_tgraph, partial_gain_im1 = ts.iter[i-1]
-    
+        cur_tgraph, partial_gain_im1 = ts.iter[i - 1]
+
     xi = sel_x[i]
     y_start = xi[1]
     y_start_nghbs = ts.d_tour[y_start]
@@ -354,7 +377,7 @@ def next_y(i: int, used_x: UsedEdges, used_y: UsedEdges, sel_x: SelectedEdges, s
         # condition (a)
         if i <= 1 and edge_in_edge_list(maybe_yi, used_y.get(i, [])):
             continue
-        
+
         # condition (b)
         gain_i = exchange_gain(xi, maybe_yi, ts.costs)
         if partial_gain_im1 + gain_i <= 0:
@@ -369,7 +392,7 @@ def next_y(i: int, used_x: UsedEdges, used_y: UsedEdges, sel_x: SelectedEdges, s
             sel_y[i] = maybe_yi
             yi_tgraph = exchange_edges(cur_tgraph, xi, maybe_yi)
 
-            maybe_xi1_res = next_x(i+1, used_x, sel_y, ts, tgraph=yi_tgraph)
+            maybe_xi1_res = next_x(i + 1, used_x, sel_y, ts, tgraph=yi_tgraph)
             if maybe_xi1_res is None:
                 continue
         else:
@@ -386,14 +409,38 @@ def add_create_edge(i: int, dct: dict[int, set[Edge]], e: Edge):
     else:
         dct[i] = {e}
 
+
 # Apologies for the below code, originally it was written with recursion because on small instances it seemed to barely need it
 # However, for larger instances it still suffers from Python's recursion limit/lack of recursion optimization, so it was rewritten with as little change as possible
 
-XEvaluation = tuple[Literal[True], tuple[int, UsedEdges, UsedEdges, SelectedEdges, SelectedEdges, TourState, Optional[XResult]]]
-YEvaluation = tuple[Literal[False], tuple[int, UsedEdges, UsedEdges, SelectedEdges, SelectedEdges, TourState]]
+XEvaluation = tuple[
+    Literal[True],
+    tuple[
+        int,
+        UsedEdges,
+        UsedEdges,
+        SelectedEdges,
+        SelectedEdges,
+        TourState,
+        Optional[XResult],
+    ],
+]
+YEvaluation = tuple[
+    Literal[False],
+    tuple[int, UsedEdges, UsedEdges, SelectedEdges, SelectedEdges, TourState],
+]
 EvalImprovement = tuple[Literal[None], tuple[list[int], float]]
 
-def evaluate_x(i: int, used_x: UsedEdges, used_y: UsedEdges, sel_x: SelectedEdges, sel_y: SelectedEdges, ts: TourState, xi_from_y: Optional[XResult] = None) -> Optional[Union[YEvaluation, EvalImprovement]]:
+
+def evaluate_x(
+    i: int,
+    used_x: UsedEdges,
+    used_y: UsedEdges,
+    sel_x: SelectedEdges,
+    sel_y: SelectedEdges,
+    ts: TourState,
+    xi_from_y: Optional[XResult] = None,
+) -> Optional[Union[YEvaluation, EvalImprovement]]:
     xi_result = next_x(i, used_x, sel_y, ts) if xi_from_y is None else xi_from_y
     if xi_result is not None:
         xi, new_tour, joined_i = xi_result
@@ -403,7 +450,7 @@ def evaluate_x(i: int, used_x: UsedEdges, used_y: UsedEdges, sel_x: SelectedEdge
             if i == 1:
                 partial_gain_im1 = 0
             else:
-                _, partial_gain_im1 = ts.iter[i-1]
+                _, partial_gain_im1 = ts.iter[i - 1]
 
             join_gain_i = exchange_gain(xi, joined_i, ts.costs)
 
@@ -413,7 +460,7 @@ def evaluate_x(i: int, used_x: UsedEdges, used_y: UsedEdges, sel_x: SelectedEdge
         sel_x[i] = xi
         add_create_edge(i, used_x, xi)
         return (False, (i, used_x, used_y, sel_x, sel_y, ts))
-    
+
     if i == 1:
         used_x.pop(1, None)
         # used_y.pop(0, None)
@@ -423,18 +470,25 @@ def evaluate_x(i: int, used_x: UsedEdges, used_y: UsedEdges, sel_x: SelectedEdge
         return None
     else:
         raise ValueError("x_i should exist for higher i!")
-    
 
-def evaluate_y(i: int, used_x: UsedEdges, used_y: UsedEdges, sel_x: SelectedEdges, sel_y: SelectedEdges, ts: TourState) -> XEvaluation:
+
+def evaluate_y(
+    i: int,
+    used_x: UsedEdges,
+    used_y: UsedEdges,
+    sel_x: SelectedEdges,
+    sel_y: SelectedEdges,
+    ts: TourState,
+) -> XEvaluation:
     yi_result = next_y(i, used_x, used_y, sel_x, sel_y, ts)
-    
+
     if yi_result is not None:
         xi = sel_x[i]
         yi, gain_i, xi1_res = yi_result
 
         sel_y[i] = yi
         add_create_edge(i, used_y, yi)
-        
+
         if i == 0:
             tgraph_im1 = ts.tgraph
             partial_gain_im1 = 0
@@ -445,10 +499,10 @@ def evaluate_y(i: int, used_x: UsedEdges, used_y: UsedEdges, sel_x: SelectedEdge
         partial_gain_i = partial_gain_im1 + gain_i
         ts.iter[i] = (tgraph_i, partial_gain_i)
 
-        i = i+1
+        i = i + 1
 
         return (True, (i, used_x, used_y, sel_x, sel_y, ts, xi1_res))
-    
+
     if i >= 2:
         # since we just tried for y_1 we know no more exist
         return (True, (1, used_x, used_y, sel_x, sel_y, ts, None))
@@ -458,7 +512,7 @@ def evaluate_y(i: int, used_x: UsedEdges, used_y: UsedEdges, sel_x: SelectedEdge
     else:
         used_y.pop(0, None)
         return (True, (0, used_x, used_y, sel_x, sel_y, ts, None))
-    
+
 
 def improve_tour(n: int, tbase: int, tour: list[int], costs: list[list[float]]):
     d_tour = dict_tour(tour)
@@ -466,7 +520,9 @@ def improve_tour(n: int, tbase: int, tour: list[int], costs: list[list[float]]):
     ts = TourState(n, tbase, tour, d_tour, tgraph, costs, dict())
 
     # Very simple iterative implementation of the recursive algorithm, apologies for the ugly code
-    queue: list[Union[XEvaluation, YEvaluation]] = [(True, (0, dict(), dict(), dict(), dict(), ts, None))]
+    queue: list[Union[XEvaluation, YEvaluation]] = [
+        (True, (0, dict(), dict(), dict(), dict(), ts, None))
+    ]
 
     while len(queue) > 0:
         eval_q = queue.pop()
@@ -488,23 +544,26 @@ def improve_tour(n: int, tbase: int, tour: list[int], costs: list[list[float]]):
             eval_res = evaluate_y(*y_eval)
             queue.append(eval_res)
 
-    return 
+    return
 
 
-
-def lin_kernighan(costs: list[list[float]], start_tour: Optional[list[int]]=None, no_random=False):
+def lin_kernighan(
+    costs: list[list[float]], start_tour: Optional[list[int]] = None, no_random=False
+):
     n = len(costs)
-    
+
     if start_tour is not None:
         tour = start_tour
     elif no_random:
         tour = list(range(n))
     else:
         tour = random_tour(n)
-        
+
     last_tour = tour
     new_tour = tour
     tour_gain = 0
+
+    # print(f"Starting with tour: {tour}")
 
     while new_tour is not None:
         if no_random or start_tour is not None:
@@ -529,14 +588,16 @@ def lin_kernighan(costs: list[list[float]], start_tour: Optional[list[int]]=None
     return last_tour, tour_gain
 
 
-def lin_kernighan_fixed(costs: list[list[float]], fixed_edges: list[tuple[Edge, Literal[0, 1]]]):
+def lin_kernighan_fixed(
+    costs: list[list[float]], fixed_edges: list[tuple[Edge, Literal[0, 1]]]
+):
     for edge, val in fixed_edges:
         if val == 1:
-            costs[edge[0]][edge[1]] = -float('inf')
-            costs[edge[1]][edge[0]] = -float('inf')
+            costs[edge[0]][edge[1]] = -float("inf")
+            costs[edge[1]][edge[0]] = -float("inf")
         elif val == 0:
-            costs[edge[0]][edge[1]] = float('inf')
-            costs[edge[1]][edge[0]] = float('inf')
+            costs[edge[0]][edge[1]] = float("inf")
+            costs[edge[1]][edge[0]] = float("inf")
     return lin_kernighan(costs)
 
 
@@ -545,8 +606,8 @@ def check_fixed(tour: list[int], fixed_edges: list[tuple[Edge, Literal[0, 1]]]):
     for i in range(len(tour)):
         if i == 0:
             continue
-        tour_edges_l.append((tour[i], tour[i-1]))
-        tour_edges_l.append((tour[i-1], tour[i]))
+        tour_edges_l.append((tour[i], tour[i - 1]))
+        tour_edges_l.append((tour[i - 1], tour[i]))
     tour_edges_l.append((tour[0], tour[-1]))
     tour_edges_l.append((tour[-1], tour[0]))
     tour_edges = set(tour_edges_l)
@@ -560,29 +621,30 @@ def check_fixed(tour: list[int], fixed_edges: list[tuple[Edge, Literal[0, 1]]]):
                 raise ValueError(f"Edge {e} is required in tour but was not found!")
 
     print("Fixed edges are correct!")
- 
+
 
 def check_fixed_tour(tour: list[int], fixed_one: list[Edge], fixed_zero: list[Edge]):
     tour_edges_l = []
     for i in range(len(tour)):
         if i == 0:
             continue
-        tour_edges_l.append((tour[i], tour[i-1]))
-        tour_edges_l.append((tour[i-1], tour[i]))
+        tour_edges_l.append((tour[i], tour[i - 1]))
+        tour_edges_l.append((tour[i - 1], tour[i]))
     tour_edges_l.append((tour[0], tour[-1]))
     tour_edges_l.append((tour[-1], tour[0]))
     tour_edges = set(tour_edges_l)
 
     for e in fixed_zero:
         if e in tour_edges:
-                raise ValueError(f"Edge {e} is not allowed in tour but was found!")
+            raise ValueError(f"Edge {e} is not allowed in tour but was found!")
     for e in fixed_one:
         if e not in tour_edges:
-                raise ValueError(f"Edge {e} is required in tour but was not found!")
+            raise ValueError(f"Edge {e} is required in tour but was not found!")
+
 
 def run():
     # inst_path = get_inst_path()
-    inst_path = Path('tsp/gr48.dat')
+    inst_path = Path("tsp/gr48.dat")
     graph_l = parse_as_adj_matrix(inst_path)
 
     print("Value of heuristic")
@@ -613,14 +675,14 @@ def run():
     # print(f"- Lin-Kernighan fixed: {lin_length}, {lin_time}s")
     # print(lin_tour)
     # check_fixed(lin_tour, fixed)
-    
+
     # # Simulated Annealing1
     # start_time = perf_counter_ns()
     # annealing_tour = simulated_annealing(graph_l, T=100, r=0.95, L=1000)
     # annealing_time = (perf_counter_ns() - start_time) / 1e9
     # annealing_length = length_tour(graph_l, annealing_tour)
     # print(f"- Simulated Annealing: {annealing_length}, {annealing_time}s  (L=1000)")
-    
+
     # # Simulated Annealing2
     # start_time = perf_counter_ns()
     # annealing_tour = simulated_annealing(
@@ -631,6 +693,7 @@ def run():
     # print(
     #     f"- Simulated Annealing: {annealing_length}, {annealing_time}s  (L=10000, max_no_improvement=100)"
     # )
+
 
 if __name__ == "__main__":
     run()
