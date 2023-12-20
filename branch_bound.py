@@ -125,7 +125,13 @@ def compute_bounds(
     lb = problem.model.optimize_with_val()
     after_lp = perf_counter_ns()
 
-    heur_tour, ub = heuristic(problem, costs, best_solution, best_solution_cost, heur_amount_i)
+    feas_tour = feasible_tour(costs, problem.fixed_one, problem.fixed_zero)
+    tour_cost = length_tour(costs, feas_tour)
+
+    heur_tour, ub = heuristic(
+        problem, costs, best_solution, best_solution_cost, heur_amount_i
+    )
+    # heur_tour, ub = heuristic(problem, costs, feas_tour, tour_cost, heur_amount_i)
     after_heur = perf_counter_ns()
 
     timer = (timer[0] + (after_lp - before), timer[1] + (after_heur - after_lp))
@@ -142,12 +148,18 @@ def intialize(costs: Costs, formulation=Formulation.CUTTING_PLANE) -> Subproblem
 
 
 def heuristic(
-    problem: Subproblem, costs: Costs, best_solution: list[int], best_sol_cost: float, heur_amount: int = 5
+    problem: Subproblem,
+    costs: Costs,
+    best_solution: list[int],
+    best_sol_cost: float,
+    heur_amount: int = 5,
 ) -> tuple[list[int], float]:
     if heur_amount <= 0:
         return best_solution, best_sol_cost
-    
-    best_heur_tour, _ = lin_kernighan(problem.heur_costs, start_tour=best_solution, no_random=True)
+
+    best_heur_tour, _ = lin_kernighan(
+        problem.heur_costs, start_tour=best_solution, no_random=True
+    )
     best_cost = length_tour(costs, best_heur_tour)
     lengths = []
     for _ in range(heur_amount):
@@ -186,7 +198,9 @@ def heur_fix(heur_costs: Costs, edge: Edge, fix_val: Literal[0, 1]):
     return new_heur_costs
 
 
-def branch_variable(problem: Subproblem, edge: Edge, e_idx: int, branch_e_val: float, parent_lb: float):
+def branch_variable(
+    problem: Subproblem, edge: Edge, e_idx: int, branch_e_val: float, parent_lb: float
+):
     new_model_l = problem.model.copy_fix(e_idx, 1)
     new_model_r = problem.model.copy_fix(e_idx, 0)
 
@@ -197,10 +211,24 @@ def branch_variable(problem: Subproblem, edge: Edge, e_idx: int, branch_e_val: f
     heur_costs_r = heur_fix(problem.heur_costs, edge, 0)
 
     problem_l = Subproblem(
-        fixed_one_l, problem.fixed_zero, parent_lb, e_idx, True, branch_e_val, new_model_l, heur_costs_l
+        fixed_one_l,
+        problem.fixed_zero,
+        parent_lb,
+        e_idx,
+        True,
+        branch_e_val,
+        new_model_l,
+        heur_costs_l,
     )
     problem_r = Subproblem(
-        problem.fixed_one, fixed_zero_r, parent_lb, e_idx, False, branch_e_val, new_model_r, heur_costs_r
+        problem.fixed_one,
+        fixed_zero_r,
+        parent_lb,
+        e_idx,
+        False,
+        branch_e_val,
+        new_model_r,
+        heur_costs_r,
     )
 
     return problem_l, problem_r
@@ -244,8 +272,8 @@ def do_branch_and_bound(inst: Costs):
 
     m_edges = global_problem.model.p.m_edges
 
-    pseudo_plus = ([0.0]*m_edges, [0.0]*m_edges, list[int]())
-    pseudo_min = ([0.0]*m_edges, [0.0]*m_edges, list[int]())
+    pseudo_plus = ([0.0] * m_edges, [0.0] * m_edges, list[int]())
+    pseudo_min = ([0.0] * m_edges, [0.0] * m_edges, list[int]())
 
     # Initialization.
     active_nodes: list[Subproblem] = [global_problem]
@@ -264,14 +292,26 @@ def do_branch_and_bound(inst: Costs):
         # have a good upper bound, alllowing us to prune faster)
         problem = heappop(active_nodes)
 
-        heur_amount_i = round(math.ceil(random() < heur_amount)*max(heur_amount, 0.501))
-        heur_amount = max(0.25, heur_amount/1.3)
+        heur_amount_i = round(
+            math.ceil(random() < heur_amount) * max(heur_amount, 0.501)
+        )
+        heur_amount = max(0.25, heur_amount / 1.3)
 
         # Process the node.
         try:
-            lb, ub, tour, timer = compute_bounds(inst, problem, best_solution, global_ub, timer, heur_amount_i)
+            lb, ub, tour, timer = compute_bounds(
+                inst, problem, best_solution, global_ub, timer, heur_amount_i
+            )
             if problem.branch_e_idx != -1:
-                update_eta_sigma(pseudo_plus, pseudo_min, problem.upward_branch, problem.branch_e_idx, problem.parent_lb, problem.parent_branch_e_val, lb)
+                update_eta_sigma(
+                    pseudo_plus,
+                    pseudo_min,
+                    problem.upward_branch,
+                    problem.branch_e_idx,
+                    problem.parent_lb,
+                    problem.parent_branch_e_val,
+                    lb,
+                )
             # print(f"New suproblem: lb={lb}, ub={ub} (glb={global_lb}, gub={global_ub})")
         except InfeasibleRelaxation:
             # print("Infeasible suproblem...")
@@ -301,7 +341,9 @@ def do_branch_and_bound(inst: Costs):
             continue
 
         # we use pseudocost branching to find the best variable to branch on
-        branch_var_res = find_branch_variable(problem, edges_by_index, pseudo_plus, pseudo_min)
+        branch_var_res = find_branch_variable(
+            problem, edges_by_index, pseudo_plus, pseudo_min
+        )
         if branch_var_res is None:
             # we've found an integer solution that the heuristic couldn't find
             print(f"Integer LP solution...")
@@ -325,8 +367,12 @@ def do_branch_and_bound(inst: Costs):
     opt_time = (perf_counter_ns() - start_opt) / 1e9
     print(f"\t- integer optimal: {length_tour(inst, best_solution)}")
     print(f"\t- optimal tour: {best_solution}")
-    timer_times = f"({timer[0]/1e9} s solving LP's. {timer[1]/1e9} s computing heuristics.)"
-    print(f"Optimizing using B&B with cutting plane relaxation and Lin-Kernighan took {opt_time} s. {timer_times}")
+    timer_times = (
+        f"({timer[0]/1e9} s solving LP's. {timer[1]/1e9} s computing heuristics.)"
+    )
+    print(
+        f"Optimizing using B&B with cutting plane relaxation and Lin-Kernighan took {opt_time} s. {timer_times}"
+    )
 
     # Return optimal solution.
     return global_ub, best_solution
@@ -349,14 +395,86 @@ def gurobi_integer(inst: list[list[float]]):
     print(f"Optimizing extended integer model using only Gurobi took {opt_time} s.")
 
 
+def feasible_tour(
+    costs: list[list[int]],
+    fixed_one: list[tuple[int, int]],
+    fixed_zero: list[tuple[int, int]],
+    starting_node=None,
+):
+    if starting_node is None:
+        starting_node = randrange(0, len(costs), 1)
+
+    # Count the number of times a node is in fixed_one
+    count_dict = {}
+    for tup in fixed_one:
+        for num in tup:
+            count_dict[num] = count_dict.get(num, 0) + 1
+
+    if any(count > 2 for count in count_dict.values()):
+        raise ValueError(
+            "Error: problem infeasible. Some nodes have more than 2 fixed edges."
+        )
+
+    # Nodes that appear twice in fixed_ones can only be added using fixed edges, not using nearest neighbor
+    nodes_appear_twice = [node for node, count in count_dict.items() if count == 2]
+
+    n = len(costs)
+    remaining_nodes = list(range(n))
+
+    cur_node = starting_node
+    remaining_nodes.remove(cur_node)
+    tour = [cur_node]
+
+    for _ in range(n - 1):
+        # if fixed -> add that one
+        cur_node = tour[-1]
+
+        if any(cur_node in edge for edge in fixed_one):
+            for edge in fixed_one:
+                if cur_node in edge:
+                    next_node = edge[0] if cur_node == edge[1] else edge[1]
+                    tour.append(next_node)
+                    fixed_one.remove(edge)
+                    remaining_nodes.remove(next_node)
+
+        # else -> add neareast neighbor
+        else:
+            # get the costs for all nodes
+            costs_row = costs[cur_node]
+
+            # Check which nodes can be visited
+            neighbors = [
+                node
+                for node in remaining_nodes
+                if (cur_node, node) not in fixed_zero
+                and (node, cur_node) not in fixed_zero
+                and node not in nodes_appear_twice
+            ]
+            if not neighbors:
+                break  # not possible to find new node
+
+            # get a start index
+            next_node = neighbors[0]
+
+            for n in neighbors[1:]:
+                if costs_row[n] < costs_row[next_node]:
+                    next_node = n
+
+            tour.append(next_node)
+            remaining_nodes.remove(next_node)
+
+    return tour
+
+
 def main():
     # inst_path = get_inst_path()
     inst_path = Path("tsp/gr96.dat")
     graph_l = parse_as_adj_matrix(inst_path)
-    
+
+    # feasible_tour(graph_l, fixed_one, fixed_zero)
     do_branch_and_bound(graph_l)
 
-    gurobi_integer(graph_l)
+    # gurobi_integer(graph_l)
 
 
 main()
