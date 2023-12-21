@@ -125,13 +125,16 @@ def compute_bounds(
     lb = problem.model.optimize_with_val()
     after_lp = perf_counter_ns()
 
-    feas_tour = feasible_tour(costs, problem.fixed_one, problem.fixed_zero)
-    tour_cost = length_tour(costs, feas_tour)
+    try:
+        heur_tour, ub = heuristic(
+            problem, costs, best_solution, best_solution_cost, heur_amount_i
+        )
+    except:
+        print("best solution not feasible, try new feasible tour")
+        feas_tour = feasible_tour(costs, problem.fixed_one, problem.fixed_zero)
+        tour_cost = length_tour(costs, feas_tour)
+        heur_tour, ub = heuristic(problem, costs, feas_tour, tour_cost, heur_amount_i)
 
-    heur_tour, ub = heuristic(
-        problem, costs, best_solution, best_solution_cost, heur_amount_i
-    )
-    # heur_tour, ub = heuristic(problem, costs, feas_tour, tour_cost, heur_amount_i)
     after_heur = perf_counter_ns()
 
     timer = (timer[0] + (after_lp - before), timer[1] + (after_heur - after_lp))
@@ -286,81 +289,86 @@ def do_branch_and_bound(inst: Costs):
 
     heur_amount = 25
 
-    # Main loop.
-    while active_nodes:
-        # Select an active node to process. We choose the one with the lowest lower bound (hopefully this will also
-        # have a good upper bound, alllowing us to prune faster)
-        problem = heappop(active_nodes)
+    try:
+        # Main loop.
+        while active_nodes:
+            # Select an active node to process. We choose the one with the lowest lower bound (hopefully this will also
+            # have a good upper bound, alllowing us to prune faster)
+            problem = heappop(active_nodes)
 
-        heur_amount_i = round(
-            math.ceil(random() < heur_amount) * max(heur_amount, 0.501)
-        )
-        heur_amount = max(0.25, heur_amount / 1.3)
-
-        # Process the node.
-        try:
-            lb, ub, tour, timer = compute_bounds(
-                inst, problem, best_solution, global_ub, timer, heur_amount_i
+            heur_amount_i = round(
+                math.ceil(random() < heur_amount) * max(heur_amount, 0.501)
             )
-            if problem.branch_e_idx != -1:
-                update_eta_sigma(
-                    pseudo_plus,
-                    pseudo_min,
-                    problem.upward_branch,
-                    problem.branch_e_idx,
-                    problem.parent_lb,
-                    problem.parent_branch_e_val,
-                    lb,
+            heur_amount = max(0.25, heur_amount / 1.3)
+
+            # Process the node.
+            try:
+                lb, ub, tour, timer = compute_bounds(
+                    inst, problem, best_solution, global_ub, timer, heur_amount_i
                 )
-            # print(f"New suproblem: lb={lb}, ub={ub} (glb={global_lb}, gub={global_ub})")
-        except InfeasibleRelaxation:
-            # print("Infeasible suproblem...")
-            # Pruned by infeasibility.
-            continue
+                if problem.branch_e_idx != -1:
+                    update_eta_sigma(
+                        pseudo_plus,
+                        pseudo_min,
+                        problem.upward_branch,
+                        problem.branch_e_idx,
+                        problem.parent_lb,
+                        problem.parent_branch_e_val,
+                        lb,
+                    )
+                # print(f"New suproblem: lb={lb}, ub={ub} (glb={global_lb}, gub={global_ub})")
+            except InfeasibleRelaxation:
+                # print("Infeasible suproblem...")
+                # Pruned by infeasibility.
+                continue
 
-        # Update global upper bound.
-        if ub < global_ub:
-            global_ub = ub
-            best_solution = tour
-            print(f"Improved upper bound. (glb={global_lb}, gub={global_ub})")
-
-        # by heap property we have that active_nodes[0] has the lowest lower bound
-        new_global_lb = min(lb, active_nodes[0].parent_lb) if active_nodes else lb
-
-        # if it's greater than global ub we've already found an optimum and we're just making things worse
-        if new_global_lb > global_lb and new_global_lb <= global_ub:
-            global_lb = new_global_lb
-            print(f"Improved lower bound. (lb={lb} glb={global_lb}, gub={global_ub})")
-
-        # Prune by bound
-        if lb > global_ub:
-            continue
-
-        # Prune by optimality
-        if lb == global_ub:
-            continue
-
-        # we use pseudocost branching to find the best variable to branch on
-        branch_var_res = find_branch_variable(
-            problem, edges_by_index, pseudo_plus, pseudo_min
-        )
-        if branch_var_res is None:
-            # we've found an integer solution that the heuristic couldn't find
-            print(f"Integer LP solution...")
-            if lb < global_ub:
-                tour = problem.model.get_tour(edges_by_index)
-                global_ub = lb
+            # Update global upper bound.
+            if ub < global_ub:
+                global_ub = ub
                 best_solution = tour
-                print(f"Improved upper bound {global_ub}.")
-            continue
+                print(f"Improved upper bound. (glb={global_lb}, gub={global_ub})")
 
-        branch_edge, branch_edge_idx, branch_e_value = branch_var_res
+            # by heap property we have that active_nodes[0] has the lowest lower bound
+            new_global_lb = min(lb, active_nodes[0].parent_lb) if active_nodes else lb
 
-        problem_l, problem_r = branch_variable(
-            problem, branch_edge, branch_edge_idx, branch_e_value, lb
-        )
-        heappush(active_nodes, problem_l)
-        heappush(active_nodes, problem_r)
+            # if it's greater than global ub we've already found an optimum and we're just making things worse
+            if new_global_lb > global_lb and new_global_lb <= global_ub:
+                global_lb = new_global_lb
+                print(
+                    f"Improved lower bound. (lb={lb} glb={global_lb}, gub={global_ub})"
+                )
+
+            # Prune by bound
+            if lb > global_ub:
+                continue
+
+            # Prune by optimality
+            if lb == global_ub:
+                continue
+
+            # we use pseudocost branching to find the best variable to branch on
+            branch_var_res = find_branch_variable(
+                problem, edges_by_index, pseudo_plus, pseudo_min
+            )
+            if branch_var_res is None:
+                # we've found an integer solution that the heuristic couldn't find
+                print(f"Integer LP solution...")
+                if lb < global_ub:
+                    tour = problem.model.get_tour(edges_by_index)
+                    global_ub = lb
+                    best_solution = tour
+                    print(f"Improved upper bound {global_ub}.")
+                continue
+
+            branch_edge, branch_edge_idx, branch_e_value = branch_var_res
+
+            problem_l, problem_r = branch_variable(
+                problem, branch_edge, branch_edge_idx, branch_e_value, lb
+            )
+            heappush(active_nodes, problem_l)
+            heappush(active_nodes, problem_r)
+    except KeyboardInterrupt:
+        print("Keyboard interrupt. Intermediate result:")
 
     assert global_ub >= global_lb
 
@@ -471,10 +479,9 @@ def main():
     inst_path = Path("tsp/gr96.dat")
     graph_l = parse_as_adj_matrix(inst_path)
 
-    # feasible_tour(graph_l, fixed_one, fixed_zero)
     do_branch_and_bound(graph_l)
 
-    # gurobi_integer(graph_l)
+    gurobi_integer(graph_l)
 
 
 main()
