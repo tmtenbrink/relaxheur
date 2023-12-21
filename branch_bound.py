@@ -130,7 +130,7 @@ def compute_bounds(
             problem, costs, best_solution, best_solution_cost, heur_amount_i
         )
     except:
-        print("best solution not feasible, try new feasible tour")
+        # print("best solution not feasible, try new feasible tour")
         feas_tour = feasible_tour(costs, problem.fixed_one, problem.fixed_zero)
         tour_cost = length_tour(costs, feas_tour)
         heur_tour, ub = heuristic(problem, costs, feas_tour, tour_cost, heur_amount_i)
