@@ -702,6 +702,15 @@ def next_x(
         if i >= 1:
             # condition (b)
             joined = (ts.tbase, nghb)
+
+            # this is not possible of course
+            if joined[0] == joined[1]:
+                continue
+            
+            # replacing it with the same edge doesn't work of course
+            if joined == maybe_x:
+                continue
+            
             is_tour, maybe_tour = try_is_tour(ts.n, cur_tgraph, maybe_x, joined)
             if not is_tour:
                 continue

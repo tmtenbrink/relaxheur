@@ -1,8 +1,12 @@
 
 
+from typing import Optional
+
+
 EdgeValue = tuple[float, list[tuple[int, int]]]
 Edge = tuple[int, int]
 VertTourNghbs = dict[int, tuple[int, int]]
+# all neighbors of each node
 VertNghbs = dict[int, set[int]]
 
 UsedEdges = dict[int, set[Edge]]
@@ -76,16 +80,29 @@ def sw_minimum_cut(graph: list[list[EdgeValue]]):
     return min_cut, best_edge_list
 
 
+def maybe_tour_is_tour(n: int, tour_n_a_dict: VertNghbs, x_remove: Edge, y_repl: Edge):
+    maybe_tour = vert_nghbs_to_tour_exchange(n, tour_n_a_dict, x_remove, y_repl)
+    if len(maybe_tour) != n:
+        return False, []
+    return True, maybe_tour
+
+
 def try_is_tour(
     n: int, tour_n_a_dict: VertNghbs, x_remove: Edge, y_repl: Edge
 ) -> tuple[bool, list[int]]:
-    maybe_tour_n_a_dict = exchange_edges(
-        tour_n_a_dict, x_remove, y_repl, require_existence=False, copy=False
-    )
-    is_tour, maybe_tour = is_node_edges_tour(n, maybe_tour_n_a_dict)
-    maybe_tour_n_a_dict = exchange_edges(
-        tour_n_a_dict, y_repl, x_remove, require_existence=False, copy=False
-    )
+    is_tour, maybe_tour = maybe_tour_is_tour(n, tour_n_a_dict, x_remove, y_repl)
+    # if len(tour_new_mthd) != n:
+    #     return False, []
+    # if len(tour_new_mthd) != n:
+    #     return False, []
+    # return True, tour
+    
+    # is_tour, maybe_tour = is_node_edges_tour(n, tour_n_a_dict, x_remove, y_repl)
+    # if len(maybe_tour) != len(tour_new_mthd):
+    #     tour_new_mthd = vert_nghbs_to_tour_exchange(tour_n_a_dict, x_remove, y_repl)
+    #     print("Bad!")
+    # we exchange back to not modify the original list
+    
     return is_tour, maybe_tour
 
 
@@ -128,6 +145,61 @@ def exchange_edges(
     return node_edges
 
 
+# def remove_other(node: int, removed_e: Edge, added_e: Edge, neighbors: set[int], seen_nodes: set[int]) -> Optional[int]:
+#     to_skip = []
+#     to_add = []
+#     if node == removed_e[0]:
+#         to_skip = removed_e[1]
+#     elif node == added_e[1]:
+#         to_skip = removed_e[1]
+
+#     if node == added_e:
+
+
+def other_node(node: int, e: Edge):
+    if node == e[0]:
+        return e[1]
+    elif node == e[1]:
+        return e[0]
+    else:
+        return None
+
+
+def vert_nghbs_to_tour_exchange(n: int, v_n: VertNghbs, x_remove: Edge, y_repl: Edge):
+    if len(v_n) == 0:
+        return []
+    
+    current_node = next(iter(v_n))
+    first_node = current_node
+    
+    prev_node = None
+    tour = [current_node]
+
+    while True:
+        remov_adj = other_node(current_node, x_remove)
+        added_adj = other_node(current_node, y_repl)
+        added_adj = [added_adj] if added_adj is not None and added_adj != prev_node and added_adj != remov_adj else []
+        unseen_nghbs = [nb for nb in v_n[current_node] if nb != prev_node and nb != remov_adj] + added_adj
+
+        # if we are the first node there should be two possibilities
+        required_length = 1 if prev_node is not None else 2
+
+        if len(unseen_nghbs) == 0:
+            return tour
+
+        if len(unseen_nghbs) != required_length:
+            return []
+        
+        next_nb = unseen_nghbs[0]
+
+        if next_nb == first_node:
+            return tour
+
+        tour.append(next_nb)
+        prev_node = current_node
+        current_node = next_nb
+
+
 def vert_ngbhs_to_tour(v_n: VertNghbs) -> list[int]:
     if len(v_n) == 0:
         return []
@@ -154,10 +226,18 @@ def vert_ngbhs_to_tour(v_n: VertNghbs) -> list[int]:
     return seen_order
 
 
-def is_node_edges_tour(n: int, node_edges: VertNghbs) -> tuple[bool, list[int]]:
+def is_node_edges_tour(n: int, node_edges: VertNghbs, x_remove: Edge, y_repl: Edge) -> tuple[bool, list[int]]:
+    maybe_tour_n_a_dict = exchange_edges(
+        node_edges, x_remove, y_repl, require_existence=False, copy=False
+    )
+    
     # maybe replace by whether t0 is reachable or something else
-    tour = vert_ngbhs_to_tour(node_edges)
-    # return len(tour) == n, tour
+    tour = vert_ngbhs_to_tour(maybe_tour_n_a_dict)
+
+    exchange_edges(
+        maybe_tour_n_a_dict, y_repl, x_remove, require_existence=False, copy=False
+    )
+
     if len(tour) != n:
         return False, []
     return True, tour
