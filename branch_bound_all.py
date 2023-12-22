@@ -607,7 +607,7 @@ UsedEdges = dict[int, set[Edge]]
 SelectedEdges = dict[int, Edge]
 
 # current_graph, partial gain, current tour
-IterState = tuple[VertNghbs, float]
+IterState = tuple[VertNghbs, float, list[tuple[Edge, Edge]]]
 
 
 def pick_x0(d_tour: VertTourNghbs, t0: int, costs: list[list[float]]):
@@ -678,18 +678,19 @@ def next_x(
     used_x: UsedEdges,
     sel_y: SelectedEdges,
     ts: TourState,
-    tgraph: Optional[VertNghbs] = None,
+    tgraph_moves: Optional[tuple[VertNghbs, list[tuple[Edge, Edge]]]] = None,
 ) -> Optional[tuple[Edge, list[int], Edge]]:
     if i == 0:
         t_start = ts.tbase
         cur_tgraph = ts.tgraph
+        moves = []
     else:
         yim1 = sel_y[i - 1]
         t_start = yim1[1]
-        if tgraph is None:
-            cur_tgraph, _ = ts.iter[i - 1]
+        if tgraph_moves is None:
+            cur_tgraph, _, moves = ts.iter[i - 1]
         else:
-            cur_tgraph = tgraph
+            cur_tgraph, moves = tgraph_moves
 
     base_nghbs = ts.d_tour[t_start]
     for nghb in base_nghbs:
@@ -711,7 +712,7 @@ def next_x(
             if joined == maybe_x:
                 continue
             
-            is_tour, maybe_tour = try_is_tour(ts.n, cur_tgraph, maybe_x, joined)
+            is_tour, maybe_tour = try_is_tour(ts.n, cur_tgraph, maybe_x, joined, moves, ts.tgraph)
             if not is_tour:
                 continue
 
@@ -739,8 +740,9 @@ def next_y(
     if i == 0:
         partial_gain_im1 = 0
         cur_tgraph = ts.tgraph
+        moves = []
     else:
-        cur_tgraph, partial_gain_im1 = ts.iter[i - 1]
+        cur_tgraph, partial_gain_im1, moves = ts.iter[i - 1]
 
     xi = sel_x[i]
     y_start = xi[1]
@@ -771,7 +773,7 @@ def next_y(
             sel_y[i] = maybe_yi
             yi_tgraph = exchange_edges(cur_tgraph, xi, maybe_yi)
 
-            maybe_xi1_res = next_x(i + 1, used_x, sel_y, ts, tgraph=yi_tgraph)
+            maybe_xi1_res = next_x(i + 1, used_x, sel_y, ts, tgraph_moves=(yi_tgraph, moves + [(xi, maybe_yi)]))
             if maybe_xi1_res is None:
                 continue
         else:
@@ -798,14 +800,15 @@ XEvaluation = tuple[
         SelectedEdges,
         SelectedEdges,
         TourState,
+        set[bytes],
         Optional[XResult],
     ],
 ]
 YEvaluation = tuple[
     Literal[False],
-    tuple[int, UsedEdges, UsedEdges, SelectedEdges, SelectedEdges, TourState],
+    tuple[int, UsedEdges, UsedEdges, SelectedEdges, SelectedEdges, TourState, set[bytes]],
 ]
-EvalImprovement = tuple[Literal[None], tuple[list[int], float]]
+EvalImprovement = tuple[Literal[None], tuple[list[int], float, bytes]]
 
 
 def evaluate_x(
@@ -815,6 +818,7 @@ def evaluate_x(
     sel_x: SelectedEdges,
     sel_y: SelectedEdges,
     ts: TourState,
+    seen_tours: set[bytes],
     xi_from_y: Optional[XResult] = None,
 ) -> Optional[Union[YEvaluation, EvalImprovement]]:
     xi_result = next_x(i, used_x, sel_y, ts) if xi_from_y is None else xi_from_y
@@ -823,24 +827,28 @@ def evaluate_x(
 
         # check bettter tour!
         if i >= 1:
+            if (new_repr := normalize_tour_repr(new_tour)) in seen_tours:
+                # print("SEEEEEN!!")
+                return (None, (new_tour, -1.0, new_repr))
+            
             if i == 1:
                 partial_gain_im1 = 0
             else:
-                _, partial_gain_im1 = ts.iter[i - 1]
+                _, partial_gain_im1, _ = ts.iter[i - 1]
 
             join_gain_i = exchange_gain(xi, joined_i, ts.costs)
 
             if partial_gain_im1 + join_gain_i > 0:
-                return (None, (new_tour, join_gain_i))
+                return (None, (new_tour, join_gain_i, normalize_tour_repr(new_tour)))
 
         sel_x[i] = xi
         add_create_edge(i, used_x, xi)
-        return (False, (i, used_x, used_y, sel_x, sel_y, ts))
+        return (False, (i, used_x, used_y, sel_x, sel_y, ts, seen_tours))
 
     if i == 1:
         used_x.pop(1, None)
         # used_y.pop(0, None)
-        return (False, (0, used_x, used_y, sel_x, sel_y, ts))
+        return (False, (0, used_x, used_y, sel_x, sel_y, ts, seen_tours))
     elif i == 0:
         # exhausted all x_0 so go to different t_base
         return None
@@ -855,6 +863,7 @@ def evaluate_y(
     sel_x: SelectedEdges,
     sel_y: SelectedEdges,
     ts: TourState,
+    seen_tours: set[bytes]
 ) -> XEvaluation:
     yi_result = next_y(i, used_x, used_y, sel_x, sel_y, ts)
 
@@ -868,36 +877,37 @@ def evaluate_y(
         if i == 0:
             tgraph_im1 = ts.tgraph
             partial_gain_im1 = 0
+            moves = []
         else:
-            tgraph_im1, partial_gain_im1 = ts.iter[i - 1]
+            tgraph_im1, partial_gain_im1, moves = ts.iter[i - 1]
 
         tgraph_i = exchange_edges(tgraph_im1, xi, yi)
         partial_gain_i = partial_gain_im1 + gain_i
-        ts.iter[i] = (tgraph_i, partial_gain_i)
+        ts.iter[i] = (tgraph_i, partial_gain_i, moves + [(xi, yi)])
 
         i = i + 1
 
-        return (True, (i, used_x, used_y, sel_x, sel_y, ts, xi1_res))
+        return (True, (i, used_x, used_y, sel_x, sel_y, ts, seen_tours, xi1_res))
 
     if i >= 2:
         # since we just tried for y_1 we know no more exist
-        return (True, (1, used_x, used_y, sel_x, sel_y, ts, None))
+        return (True, (1, used_x, used_y, sel_x, sel_y, ts, seen_tours, None))
     elif i == 1:
         used_y.pop(1, None)
-        return (True, (1, used_x, used_y, sel_x, sel_y, ts, None))
+        return (True, (1, used_x, used_y, sel_x, sel_y, ts, seen_tours, None))
     else:
         used_y.pop(0, None)
-        return (True, (0, used_x, used_y, sel_x, sel_y, ts, None))
+        return (True, (0, used_x, used_y, sel_x, sel_y, ts, seen_tours, None))
 
 
-def improve_tour(n: int, tbase: int, tour: list[int], costs: list[list[float]]):
+def improve_tour(n: int, tbase: int, tour: list[int], costs: list[list[float]], seen_tours: set[bytes]):
     d_tour = dict_tour(tour)
     tgraph = d_tour_to_node_adj_dict(n, d_tour)
     ts = TourState(n, tbase, tour, d_tour, tgraph, costs, dict())
 
     # Very simple iterative implementation of the recursive algorithm, apologies for the ugly code
     queue: list[Union[XEvaluation, YEvaluation]] = [
-        (True, (0, dict(), dict(), dict(), dict(), ts, None))
+        (True, (0, dict(), dict(), dict(), dict(), ts, seen_tours, None))
     ]
 
     while len(queue) > 0:
@@ -923,19 +933,19 @@ def improve_tour(n: int, tbase: int, tour: list[int], costs: list[list[float]]):
     return
 
 
-# def normalize_tour_repr(tour: list[int]):
-#     max_size = len(tour)
+def normalize_tour_repr(tour: list[int]):
+    max_size = len(tour)
 
-#     bytes_per_n = (max_size.bit_length() + 7) // 8
+    bytes_per_n = (max_size.bit_length() + 7) // 8
 
-#     i_zero = tour.index(0)
-#     prev_part = tour[:i_zero]
-#     normalized_tour = tour[i_zero:] + prev_part
-#     byte_seq = [i.to_bytes(bytes_per_n, byteorder='big') for i in normalized_tour]
-#     tour_bytes = b''.join(byte_seq)
-#     tour_bytes_rev = byte_seq[0] + b''.join(reversed(byte_seq[1:]))
+    i_zero = tour.index(0)
+    prev_part = tour[:i_zero]
+    normalized_tour = tour[i_zero:] + prev_part
+    byte_seq = [i.to_bytes(bytes_per_n, byteorder='big') for i in normalized_tour]
+    tour_bytes = b''.join(byte_seq)
+    tour_bytes_rev = byte_seq[0] + b''.join(reversed(byte_seq[1:]))
 
-#     return tour_bytes, tour_bytes_rev
+    return min(tour_bytes, tour_bytes_rev)
     
 
 
@@ -956,18 +966,9 @@ def lin_kernighan(
     tour_gain = 0
 
     # print(f"Starting with tour: {tour}")
-    # seen_tours = set()
+    seen_tours = set()
 
     while new_tour is not None:
-        # new_tour_repr = normalize_tour_repr(new_tour)
-        # # print(f"{seen_tours} {new_tour_repr}")
-        # if new_tour_repr[0] in seen_tours:
-        #     print("WEVE SEEN IT ALREADY")
-        #     break
-        
-        # seen_tours.add(new_tour_repr[0])
-        # seen_tours.add(new_tour_repr[1])
-
         if no_random:
             untried_tbase = new_tour.copy()
         else:
@@ -977,12 +978,16 @@ def lin_kernighan(
 
         while len(untried_tbase) > 0:
             tbase = untried_tbase.pop()
-            improve_result = improve_tour(n, tbase, last_tour, costs)
+            improve_result = improve_tour(n, tbase, last_tour, costs, seen_tours)
 
             if improve_result is None:
                 continue
             else:
-                improved_tour, improvement = improve_result
+                improved_tour, improvement, tour_repr = improve_result
+                if tour_repr in seen_tours:
+                    # print("seen already!!!!!!")
+                    return last_tour, tour_gain
+                seen_tours.add(tour_repr)
                 new_tour = improved_tour
                 tour_gain += improvement
                 break
@@ -1491,7 +1496,7 @@ def feasible_tour(
 
 def main():
     # inst_path = get_inst_path()
-    inst_path = Path("tsp/bays29.dat")
+    inst_path = Path("tsp/gr48.dat")
     graph_l = parse_as_adj_matrix(inst_path)
 
     do_branch_and_bound(graph_l)

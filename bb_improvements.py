@@ -88,16 +88,20 @@ def maybe_tour_is_tour(n: int, tour_n_a_dict: VertNghbs, x_remove: Edge, y_repl:
 
 
 def try_is_tour(
-    n: int, tour_n_a_dict: VertNghbs, x_remove: Edge, y_repl: Edge
+    n: int, tour_n_a_dict: VertNghbs, x_remove: Edge, y_repl: Edge, moves: list[tuple[Edge, Edge]], base_tgraph: VertNghbs
 ) -> tuple[bool, list[int]]:
-    is_tour, maybe_tour = maybe_tour_is_tour(n, tour_n_a_dict, x_remove, y_repl)
+
+    # is_tour, maybe_tour = maybe_tour_is_tour(n, tour_n_a_dict, x_remove, y_repl)
     # if len(tour_new_mthd) != n:
     #     return False, []
     # if len(tour_new_mthd) != n:
     #     return False, []
     # return True, tour
     
-    # is_tour, maybe_tour = is_node_edges_tour(n, tour_n_a_dict, x_remove, y_repl)
+    is_tour, maybe_tour = is_node_edges_tour(n, tour_n_a_dict, x_remove, y_repl)
+
+    # if len(moves) > 1 and is_tour:
+    #     print("Length: " + str(len(moves)))
     # if len(maybe_tour) != len(tour_new_mthd):
     #     tour_new_mthd = vert_nghbs_to_tour_exchange(tour_n_a_dict, x_remove, y_repl)
     #     print("Bad!")
@@ -227,9 +231,14 @@ def vert_ngbhs_to_tour(v_n: VertNghbs) -> list[int]:
 
 
 def is_node_edges_tour(n: int, node_edges: VertNghbs, x_remove: Edge, y_repl: Edge) -> tuple[bool, list[int]]:
+
+    
+    
     maybe_tour_n_a_dict = exchange_edges(
         node_edges, x_remove, y_repl, require_existence=False, copy=False
     )
+    # if len(maybe_tour_n_a_dict) == 0:
+    #     return False, []
     
     # maybe replace by whether t0 is reachable or something else
     tour = vert_ngbhs_to_tour(maybe_tour_n_a_dict)
