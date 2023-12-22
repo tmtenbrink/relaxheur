@@ -80,9 +80,12 @@ def try_is_tour(
     n: int, tour_n_a_dict: VertNghbs, x_remove: Edge, y_repl: Edge
 ) -> tuple[bool, list[int]]:
     maybe_tour_n_a_dict = exchange_edges(
-        tour_n_a_dict, x_remove, y_repl, require_existence=False
+        tour_n_a_dict, x_remove, y_repl, require_existence=False, copy=False
     )
     is_tour, maybe_tour = is_node_edges_tour(n, maybe_tour_n_a_dict)
+    maybe_tour_n_a_dict = exchange_edges(
+        tour_n_a_dict, y_repl, x_remove, require_existence=False, copy=False
+    )
     return is_tour, maybe_tour
 
 

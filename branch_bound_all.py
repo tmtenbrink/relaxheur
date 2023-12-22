@@ -1482,12 +1482,12 @@ def feasible_tour(
 
 def main():
     # inst_path = get_inst_path()
-    inst_path = Path("tsp/gr48.dat")
+    inst_path = Path("tsp/bays29.dat")
     graph_l = parse_as_adj_matrix(inst_path)
 
     do_branch_and_bound(graph_l)
 
-    gurobi_integer(graph_l)
+    # gurobi_integer(graph_l)
 
 
 main()
