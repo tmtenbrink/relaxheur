@@ -404,7 +404,7 @@ def gurobi_integer(inst: list[list[float]]):
 
 
 def feasible_tour(
-    costs: list[list[int]],
+    costs: list[list[float]],
     fixed_one: list[tuple[int, int]],
     fixed_zero: list[tuple[int, int]],
     starting_node=None,
@@ -476,7 +476,7 @@ def feasible_tour(
 
 def main():
     # inst_path = get_inst_path()
-    inst_path = Path("tsp/gr96.dat")
+    inst_path = Path("tsp/gr48.dat")
     graph_l = parse_as_adj_matrix(inst_path)
 
     do_branch_and_bound(graph_l)

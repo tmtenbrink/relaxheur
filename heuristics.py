@@ -210,6 +210,9 @@ def is_node_edges_tour(n: int, node_edges: VertNghbs) -> tuple[bool, list[int]]:
     # maybe replace by whether t0 is reachable or something else
     tour = vert_ngbhs_to_tour(node_edges)
     return len(tour) == n, tour
+    # if len(tour) == n:
+    #     return False, []
+    # return True, tour
 
 
 def edge_eq(e1: Edge, e2: Edge) -> bool:
