@@ -3,3 +3,4 @@ tsp
 .python-version
 .vscode
 **/*.pyc
+__pycache__

@@ -4,15 +4,20 @@ version = "0.1.0"
 description = ""
 authors = ["tmtenbrink <T.M.tenBrink@student.tudelft.nl>"]
 readme = "README.md"
+packages = [
+    { include = "tisp", from = "src" },
+]
 
 [tool.poetry.dependencies]
 python = ">=3.9, <3.10"
 gurobipy = "^10.0.3"
+mip = "^1.15.0"
 
-
+[tool.poetry.scripts]
+tisp = "tisp.solver:run"
 
 [tool.poetry.group.dev.dependencies]
-black = "^23.10.1"
+ruff = "^0.1.8"
 gurobipy-stubs = "^2.0.0"
 networkx = "^3.2"
 

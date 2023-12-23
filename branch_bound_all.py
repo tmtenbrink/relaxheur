@@ -18,67 +18,16 @@ from lin_kernighan_2 import lin_kernighan2, normalize_tour, shuffle_normalized
 # ============================ Parsing =============================
 # ==================================================================
 
-def parse_line(ln: str) -> list[float]:
-    return list(map(lambda i: float(i), ln.rstrip().split(" ")))
-
-
-def get_inst_path():
-    parser = argparse.ArgumentParser(description="Process some integers.")
-    parser.add_argument("inst_name", help="Filename of instance")
-    args = parser.parse_args()
-
-    return Path(args.inst_name)
-
-
-def parse_as_adj_matrix(inst_path: Path) -> list[list[float]]:
-    with open(inst_path, "r") as f:
-        lines = f.readlines()
-
-    adj_matrix = list(map(lambda ln: parse_line(ln), lines[1:]))
-
-    return adj_matrix
-
 
 Edge = tuple[int, int]
 Costs = list[list[float]]
-EdgeCosts = list[float]
+
 EdgeValue = tuple[float, list[tuple[int, int]]]
 
 # ==================================================================
 # ======= Linear Programming Relaxation (Min-Cut Separation) =======
 # ==================================================================
 
-
-def compute_edge_costs(costs: Costs) -> EdgeCosts:
-    n = len(costs)
-    m_edges = (n * (n - 1)) // 2
-    edge_costs = [0.0] * m_edges
-
-    for row_num, row in enumerate(costs):
-        target_start = row_num * (2 * n - row_num - 1) // 2
-        target_end = target_start + (n - row_num - 1)
-        for i, e in enumerate(range(target_start, target_end)):
-            edge_costs[e] = row[row_num + 1 + i]
-
-    return edge_costs
-
-
-def adjacency_matrix_from_vector(
-    x_values: list[float], n: int
-) -> list[list[EdgeValue]]:
-    """Create an adjacency matrix from x_values"""
-    if len(x_values) != (n * (n - 1)) // 2:
-        raise ValueError("x_values does not have the correct length")
-
-    adjacency_matrix = [[(0.0, [(i, j)]) for i in range(n)] for j in range(n)]
-
-    for i in range(n):
-        for j in range(i + 1, n):
-            idx = edge_idx(i, j, n)
-            adjacency_matrix[i][j] = (x_values[idx], [(i, j)])
-            adjacency_matrix[j][i] = adjacency_matrix[i][j]
-
-    return adjacency_matrix
 
 
 def get_edge_names(n: int):
@@ -99,27 +48,12 @@ def get_edges_by_index(n: int) -> dict[int, tuple[int, int]]:
     for i in range(n):
         for j in range(i + 1, n):
             edges_by_index[index] = (i, j)
-
             index += 1
 
     return edges_by_index
 
 
-def edge_idx(lower_i: int, higher_j: int, n: int):
-    """Returns the index of the edge using our edge-index convention."""
-    return lower_i * (2 * n - lower_i - 1) // 2 + (higher_j - lower_i - 1)
 
-
-def get_edge_idxs_for_v(vertex: int, n: int):
-    """Return the indexes of the"""
-    lower_edges = [edge_idx(other_v, vertex, n) for other_v in range(0, vertex)]
-    higher_edges = [edge_idx(vertex, other_v, n) for other_v in range(vertex + 1, n)]
-
-    return lower_edges + higher_edges
-
-
-def edge_idxs_for_all_v(n: int) -> list[list[int]]:
-    return [get_edge_idxs_for_v(v, n) for v in range(n)]
 
 
 class Formulation(Enum):
@@ -260,51 +194,6 @@ class TSPModel:
         return char_vec, x_values
 
 
-def separation(
-    p: Problem, char_vec: list[gp.Var], x_values: list[float], model: gp.Model
-) -> bool:
-    """Tests whether x is in P_subtour, if not it adds the violated inequality to the model.
-    1) The constraint >=0 is already defined in the char_vector.
-    2) We check if x(delta(v))=2, for all v, with some tolerance epsilon.
-    3) We check x(delta(U))>= 2, for all U, by finding the minimum cut and checking if it
-    is larger than 2 (with tolerance epsilon). Note that if the minimimum cut is larger
-    than 2, we know that all cuts are larger than 2.
-
-    It is easy to see that constraints 1 and 2 are checked in polynomial time. Constraint 3
-    has exponentially many inequalities (as there are exponentially many U), but can be checked
-    in polynomial time since the min-cut can be found in polynomial time by the Stoer-Wagner algorithm.
-
-    Therefore, our separation algorithm is polynomial time.
-    """
-
-    # based on bounds we put in model we assume x >= 0
-    epsilon = 0.0000001
-
-    n, _, cuts, coeff = p.all()
-
-    for v in range(n):
-        # the columns are the vertices
-        edges = cuts[v]
-        x_sum = 0
-        for e in edges:
-            x_sum += x_values[e]
-
-        if abs(x_sum - 2) > epsilon:
-            edge_vars = [char_vec[e] for e in edges]
-            model.addConstr(gp.LinExpr(coeff, edge_vars) == 2, name=f"x(delta({v}))==2")
-            return False
-
-    cut_weight, min_cut_edges = compute_min_cut(x_values, n)
-    if cut_weight < 2 - epsilon:
-        subtour_vars = [char_vec[e] for e in min_cut_edges]
-        coeff_subtour = [1] * len(subtour_vars)
-        model.addConstr(
-            gp.LinExpr(coeff_subtour, subtour_vars) >= 2, name=f"x(delta(cut)>=2"
-        )
-        return False
-
-    return True
-
 
 
 def sw_minimum_cut_phase(
@@ -391,30 +280,7 @@ class InfeasibleRelaxation(Exception):
     pass
 
 
-def optimize_cut_model(m: TSPModel):
-    """RAISES InfeasibleRelaxation when unable to optimize."""
-    max_i = 100000
-    i = 0
-    invalid = True
 
-    while invalid:
-        if i > max_i:
-            print("Taking a long time...")
-
-        m.model.optimize()
-        if m.model.Status != gp.GRB.OPTIMAL:
-            raise InfeasibleRelaxation(
-                f"Infeasible model/could not optimize: {m.model.Status}!"
-            )
-
-        char_vec, x_values = m.char_vec_values()
-        # this modifies the underlying model and adds constraints
-        in_subtour = separation(m.p, char_vec, x_values, m.model)
-
-        invalid = not in_subtour
-        i += 1
-
-    return m.model
 
 
 def cutting_plane_model(n: int, edge_costs: EdgeCosts):
@@ -441,14 +307,21 @@ def get_arc_idxs_for_v(vertex: int, n: int, incoming: bool):
     lower_add = 0 if incoming else 1
     higher_add = 1 - lower_add
 
-    lower_edges = [2*edge_idx(other_v, vertex, n)+lower_add for other_v in range(0, vertex)]
-    higher_edges = [2*edge_idx(vertex, other_v, n)+higher_add for other_v in range(vertex+1, n)]
+    lower_edges = [
+        2 * edge_idx(other_v, vertex, n) + lower_add for other_v in range(0, vertex)
+    ]
+    higher_edges = [
+        2 * edge_idx(vertex, other_v, n) + higher_add
+        for other_v in range(vertex + 1, n)
+    ]
 
     return lower_edges + higher_edges
+
 
 def get_in_arc_idxs_for_v(vertex: int, n: int):
     """Return the indexes of the incoming arcs for a vertex, i.e. where v is the head (so second vertex in the ordered pair)."""
     return get_arc_idxs_for_v(vertex, n, True)
+
 
 def get_out_arc_idxs_for_v(vertex: int, n: int):
     """Return the indexes of the incoming arcs for a vertex, i.e. where v is the head (so second vertex in the ordered pair)."""
@@ -468,20 +341,26 @@ def extended_formulation(n: int, edge_costs: EdgeCosts, integer: bool = False):
     # for i<j (i, j) is the (n-1 + n-2 + ... + n - i) + (j - i -1)th element
     # i.e. index is i(2n-i-1)/2 + (j-i-1)
     edge_vtype = gp.GRB.BINARY if integer else gp.GRB.CONTINUOUS
-    char_vec = [model.addVar(lb=0, ub=1, name=f"char_{e}", vtype=edge_vtype) for e in range(m_edges)]
+    char_vec = [
+        model.addVar(lb=0, ub=1, name=f"char_{e}", vtype=edge_vtype)
+        for e in range(m_edges)
+    ]
     num_arcs = 2 * m_edges
     # rows are vertices without r
     # columns are the arcs, with same indexing as above
     # but where (i, j) and (j, i) follow each other (so edge_index * 2 for (i, j)
     # with still i<j
-    flow: list[list[gp.Var]] = [[model.addVar(lb=0, name=f"f_{s}({a})") for a in range(num_arcs)] for s in range(1, n)]
+    flow: list[list[gp.Var]] = [
+        [model.addVar(lb=0, name=f"f_{s}({a})") for a in range(num_arcs)]
+        for s in range(1, n)
+    ]
     z = gp.LinExpr(edge_costs, char_vec)
     model.setObjective(z, gp.GRB.MINIMIZE)
 
     # each column is all the vertices other than the vertex corresponding to column
     # so (n-1), n array
     cut_arr = edge_idxs_for_all_v(n)
-    coeff_1 = [1]*len(cut_arr[0])
+    coeff_1 = [1] * len(cut_arr[0])
     for v in range(n):
         v_cut = cut_arr[v]
         cut_x = [char_vec[e] for e in v_cut]
@@ -492,8 +371,8 @@ def extended_formulation(n: int, edge_costs: EdgeCosts, integer: bool = False):
 
     cut_in_r = cuts_in[0]
     cut_out_r = cuts_out[0]
-    coeff_r_1_in = [1]*len(cut_in_r)
-    coeff_r_1_out = [1]*len(cut_out_r)
+    coeff_r_1_in = [1] * len(cut_in_r)
+    coeff_r_1_out = [1] * len(cut_out_r)
 
     for s in range(1, n):
         f_s = flow[s - 1]
@@ -506,13 +385,12 @@ def extended_formulation(n: int, edge_costs: EdgeCosts, integer: bool = False):
             name=f"f_{s}(delta_out(r))-f_{s}(delta_in(r))>=2",
         )
 
-
     for s in range(1, n):
         f_s = flow[s - 1]
         # we make sure we get arrays correspond to the right index of the char. vector
         for e in range(m_edges):
-            a1 = 2*e
-            a2 = 2*e + 1
+            a1 = 2 * e
+            a2 = 2 * e + 1
             model.addConstr(f_s[a1] - char_vec[e] <= 0, name=f"f_{a1}<=x({a1})")
             model.addConstr(f_s[a2] - char_vec[e] <= 0, name=f"f_{a2}<=x({a2})")
 
@@ -523,8 +401,8 @@ def extended_formulation(n: int, edge_costs: EdgeCosts, integer: bool = False):
 
             cut_out_v = cuts_out[other_v]
             cut_in_v = cuts_in[other_v]
-            coeff_v_1_in = [1]*len(cut_in_v)
-            coeff_v_1_out = [1]*len(cut_out_v)
+            coeff_v_1_in = [1] * len(cut_in_v)
+            coeff_v_1_out = [1] * len(cut_out_v)
             fs_v_out = [f_s[v] for v in cut_out_v]
             fs_v_in = [f_s[v] for v in cut_in_v]
 
@@ -551,18 +429,12 @@ def build_model(n: int, edge_costs: EdgeCosts, formulation: Formulation, integer
         return cutting_plane_model(n, edge_costs)
 
 
-
 # ==================================================================
 # =========================== Heuristics ===========================
 # ==================================================================
 
 
-def length_tour(graph: list[list[float]], tour: list[int]):
-    length = graph[tour[-1]][tour[0]]
-    for i in range(len(tour) - 1):
-        length += graph[tour[i]][tour[i + 1]]
 
-    return length
 
 
 def dict_tour(tour: list[int]) -> dict[int, tuple[int, int]]:
@@ -705,12 +577,14 @@ def next_x(
             # this is not possible of course
             if joined[0] == joined[1]:
                 continue
-            
+
             # replacing it with the same edge doesn't work of course
             if joined == maybe_x:
                 continue
-            
-            is_tour, maybe_tour = try_is_tour(ts.n, cur_tgraph, maybe_x, joined, moves, ts.tgraph)
+
+            is_tour, maybe_tour = try_is_tour(
+                ts.n, cur_tgraph, maybe_x, joined, moves, ts.tgraph
+            )
             if not is_tour:
                 continue
 
@@ -771,7 +645,13 @@ def next_y(
             sel_y[i] = maybe_yi
             yi_tgraph = exchange_edges(cur_tgraph, xi, maybe_yi)
 
-            maybe_xi1_res = next_x(i + 1, used_x, sel_y, ts, tgraph_moves=(yi_tgraph, moves + [(xi, maybe_yi)]))
+            maybe_xi1_res = next_x(
+                i + 1,
+                used_x,
+                sel_y,
+                ts,
+                tgraph_moves=(yi_tgraph, moves + [(xi, maybe_yi)]),
+            )
             if maybe_xi1_res is None:
                 continue
         else:
@@ -808,11 +688,14 @@ YEvaluation = tuple[
 EvalImprovement = tuple[Literal[None], tuple[list[int], float]]
 
 
-
 def try_is_tour(
-    n: int, tour_n_a_dict: VertNghbs, x_remove: Edge, y_repl: Edge, moves: list[tuple[Edge, Edge]], base_tgraph: VertNghbs
+    n: int,
+    tour_n_a_dict: VertNghbs,
+    x_remove: Edge,
+    y_repl: Edge,
+    moves: list[tuple[Edge, Edge]],
+    base_tgraph: VertNghbs,
 ) -> tuple[bool, list[int]]:
-
     is_tour, maybe_tour = is_node_edges_tour(n, tour_n_a_dict, x_remove, y_repl)
 
     return is_tour, maybe_tour
@@ -858,24 +741,22 @@ def vert_ngbhs_to_tour_seen(v_n: VertNghbs) -> list[int]:
                 break
         if not_seen is None:
             return tour
-        
+
         if not_seen == first_node:
             return tour
 
         prev_node = current_node
         current_node = not_seen
-        
+
         tour.append(not_seen)
 
 
-def is_node_edges_tour(n: int, node_edges: VertNghbs, x_remove: Edge, y_repl: Edge) -> tuple[bool, list[int]]:
-    maybe_tour_n_a_dict = exchange_edges(
-        node_edges, x_remove, y_repl, copy=False
-    )
+def is_node_edges_tour(
+    n: int, node_edges: VertNghbs, x_remove: Edge, y_repl: Edge
+) -> tuple[bool, list[int]]:
+    maybe_tour_n_a_dict = exchange_edges(node_edges, x_remove, y_repl, copy=False)
     tour = vert_ngbhs_to_tour_seen(maybe_tour_n_a_dict)
-    exchange_edges(
-        maybe_tour_n_a_dict, y_repl, x_remove, copy=False
-    )
+    exchange_edges(maybe_tour_n_a_dict, y_repl, x_remove, copy=False)
 
     if len(tour) != n:
         return False, []
@@ -1014,12 +895,11 @@ def normalize_tour_repr(tour: list[int]):
     i_zero = tour.index(0)
     prev_part = tour[:i_zero]
     normalized_tour = tour[i_zero:] + prev_part
-    byte_seq = [i.to_bytes(bytes_per_n, byteorder='big') for i in normalized_tour]
-    tour_bytes = b''.join(byte_seq)
-    tour_bytes_rev = byte_seq[0] + b''.join(reversed(byte_seq[1:]))
+    byte_seq = [i.to_bytes(bytes_per_n, byteorder="big") for i in normalized_tour]
+    tour_bytes = b"".join(byte_seq)
+    tour_bytes_rev = byte_seq[0] + b"".join(reversed(byte_seq[1:]))
 
     return min(tour_bytes, tour_bytes_rev)
-    
 
 
 def lin_kernighan(
@@ -1061,7 +941,6 @@ def lin_kernighan(
     return last_tour, tour_gain
 
 
-
 def check_fixed_tour(tour: list[int], fixed_one: list[Edge], fixed_zero: list[Edge]):
     tour_edges_l = []
     for i in range(len(tour)):
@@ -1079,99 +958,13 @@ def check_fixed_tour(tour: list[int], fixed_one: list[Edge], fixed_zero: list[Ed
     for e in fixed_one:
         if e not in tour_edges:
             raise ValueError(f"Edge {e} is required in tour but was not found!")
-        
+
 
 # ==================================================================
 # ======================== Branch and Bound ========================
 # ==================================================================
-     
-
-def compute_pseudoscore(
-    index_j: int, sigma_j: list[float], eta_j: list[float], initialized_j: list[int]
-):
-    uninitialized = eta_j[index_j] == 0
-    if uninitialized:
-        if not initialized_j:
-            return 1
-
-        sigmas_d_etas = [sigma_j[j] / eta_j[j] for j in initialized_j]
-
-        return sum(sigmas_d_etas) / len(initialized_j)
-
-    return sigma_j[index_j] / eta_j[index_j]
 
 
-PseudoList = tuple[list[float], list[float], list[int]]
-
-
-def pseudocost(
-    x_values: list[float],
-    pseudo_plus_list: PseudoList,
-    pseudo_min_list: PseudoList,
-    mu=1 / 6,
-    epsilon=0.0001,
-) -> tuple[int, float]:
-    sigma_j_plus, eta_j_plus, initialized_j_plus = pseudo_plus_list
-    sigma_j_min, eta_j_min, initialized_j_min = pseudo_min_list
-
-    best_j = -1
-    best_j_score = float("-inf")
-    best_j_value = -1
-    for j, value in enumerate(x_values):
-        # We definitely do not branch on integer variables
-        frac = abs(value - round(value))
-        if frac < epsilon:
-            continue
-
-        pseudo_plus = compute_pseudoscore(
-            j, sigma_j_plus, eta_j_plus, initialized_j_plus
-        )
-        pseudo_min = compute_pseudoscore(j, sigma_j_min, eta_j_min, initialized_j_min)
-
-        f_j_plus = math.ceil(value) - value
-        f_j_min = value - math.floor(value)
-
-        min_arg = f_j_min * pseudo_min
-        plus_arg = f_j_plus * pseudo_plus
-        score = (1 - mu) * min(plus_arg, min_arg) + mu * max(plus_arg, min_arg)
-        if score > best_j_score:
-            best_j = j
-            best_j_score = score
-            best_j_value = value
-
-    return best_j, best_j_value
-
-
-def update_eta_sigma(
-    pseudo_plus_list: PseudoList,
-    pseudo_min_list: PseudoList,
-    is_upward: bool,
-    var_j: int,
-    parent_obj: float,
-    parent_branch_var_val: float,
-    obj_val: float,
-):
-    sigma_j_plus, eta_j_plus, initialized_j_plus = pseudo_plus_list
-    sigma_j_min, eta_j_min, initialized_j_min = pseudo_min_list
-
-    if is_upward:
-        f_j_plus = math.ceil(parent_branch_var_val) - parent_branch_var_val
-        p_i_plus = (obj_val - parent_obj) / f_j_plus
-
-        if eta_j_plus[var_j] == 0:
-            initialized_j_plus.append(var_j)
-        eta_j_plus[var_j] += 1
-        sigma_j_plus[var_j] += p_i_plus
-    else:
-        f_j_min = parent_branch_var_val - math.floor(parent_branch_var_val)
-        p_i_min = (obj_val - parent_obj) / f_j_min
-
-        if eta_j_min[var_j] == 0:
-            initialized_j_min.append(var_j)
-        eta_j_min[var_j] += 1
-        sigma_j_min[var_j] += p_i_min
-
-    return None
 
 
 @total_ordering
@@ -1194,301 +987,17 @@ class Subproblem:
 
 
 # LP time, heur time
-Timer = tuple[int, int]
 
 
-def compute_bounds(
-    costs: list[list[float]],
-    problem: Subproblem,
-    best_solution: list[int],
-    best_solution_cost: float,
-    timer: Timer,
-    heur_amount_i: int,
-):
-    # Solve relaxation to find LB
-    # RAISES InfeasibleRelaxation
-    before = perf_counter_ns()
-    lb = problem.model.optimize_with_val()
-    after_lp = perf_counter_ns()
-
-    try:
-        heur_tour, ub = heuristic(
-            problem, costs, best_solution, best_solution_cost, heur_amount=heur_amount_i
-        )
-    except:
-        print(f"best solution {best_solution} with fixed {problem.fixed_one} to 1 and {problem.fixed_zero} to zero")
-        # print("best solution not feasible, try new feasible tour")
-        feas_tour = feasible_tour(costs, problem.fixed_one, problem.fixed_zero)
-        tour_cost = length_tour(costs, feas_tour)
-        heur_tour, ub = heuristic(problem, costs, feas_tour, tour_cost, heur_amount=heur_amount_i)
-
-    after_heur = perf_counter_ns()
-
-    timer = (timer[0] + (after_lp - before), timer[1] + (after_heur - after_lp))
-
-    return lb, ub, heur_tour, timer
 
 
-def intialize(costs: Costs, formulation=Formulation.CUTTING_PLANE) -> Subproblem:
-    n = len(costs)
-    edge_costs = compute_edge_costs(costs)
-    lp_model = build_model(n, edge_costs, formulation)
-
-    return Subproblem([], [], -1, -1, False, -1, lp_model, copy_costs(costs))
 
 
-def heuristic(
-    problem: Subproblem,
-    costs: Costs,
-    best_solution: list[int],
-    best_sol_cost: float,
-    reshuffle: bool = False,
-    heur_amount: int = 5,
-) -> tuple[list[int], float]:
-    if heur_amount <= 0:
-        return best_solution, best_sol_cost
-
-    # best_heur_tour, _ = lin_kernighan(
-    #     problem.heur_costs, start_tour=best_solution, no_random=True
-    # )
-    best_heur_tour = lin_kernighan2(
-        best_solution, problem.heur_costs
-    )
-    best_cost = length_tour(costs, best_heur_tour)
-    lengths = []
-    for _ in range(heur_amount):
-        base_tour = best_solution
-        if reshuffle:
-            base_tour = shuffle_normalized(base_tour)
-        tour = lin_kernighan2(best_solution, problem.heur_costs)
-        tour_cost = length_tour(costs, tour)
-        lengths.append(tour_cost)
-        if tour_cost < best_cost:
-            best_heur_tour = tour
-            best_cost = tour_cost
-    # print(lengths)
-    check_fixed_tour(best_heur_tour, problem.fixed_one, problem.fixed_zero)
-    ub = length_tour(costs, best_heur_tour)
-    return best_heur_tour, ub
 
 
-def initial_ub(inst: Costs) -> float:
-    ub = 0.0
-    # cost is definitely lower than the sum of all the costs
-    for lst in inst:
-        ub += sum(lst)
-    return ub
 
 
-def copy_costs(costs: Costs):
-    return [row.copy() for row in costs]
 
-
-def heur_fix(heur_costs: Costs, edge: Edge, fix_val: Literal[0, 1]):
-    new_heur_costs = copy_costs(heur_costs)
-    if fix_val == 1:
-        new_heur_costs[edge[0]][edge[1]] = -float("inf")
-        new_heur_costs[edge[1]][edge[0]] = -float("inf")
-    elif fix_val == 0:
-        new_heur_costs[edge[0]][edge[1]] = float("inf")
-        new_heur_costs[edge[1]][edge[0]] = float("inf")
-    return new_heur_costs
-
-
-def branch_variable(
-    problem: Subproblem, edge: Edge, e_idx: int, branch_e_val: float, parent_lb: float
-):
-    new_model_l = problem.model.copy_fix(e_idx, 1)
-    new_model_r = problem.model.copy_fix(e_idx, 0)
-
-    fixed_one_l = problem.fixed_one + [edge]
-    fixed_zero_r = problem.fixed_zero + [edge]
-
-    heur_costs_l = heur_fix(problem.heur_costs, edge, 1)
-    heur_costs_r = heur_fix(problem.heur_costs, edge, 0)
-
-    problem_l = Subproblem(
-        fixed_one_l,
-        problem.fixed_zero,
-        parent_lb,
-        e_idx,
-        True,
-        branch_e_val,
-        new_model_l,
-        heur_costs_l,
-    )
-    problem_r = Subproblem(
-        problem.fixed_one,
-        fixed_zero_r,
-        parent_lb,
-        e_idx,
-        False,
-        branch_e_val,
-        new_model_r,
-        heur_costs_r,
-    )
-
-    return problem_l, problem_r
-
-
-def find_branch_variable(
-    problem: Subproblem,
-    edges_by_index: dict[int, tuple[int, int]],
-    pseudo_plus: PseudoList,
-    pseudo_min: PseudoList,
-    method: Literal["pseudocost", "first-non-integer"] = "pseudocost",
-) -> Optional[tuple[Edge, int, float]]:
-    if method == "first-non-integer":
-        for e_idx, e_val in enumerate(problem.model.char_vec()):
-            epsilon = 0.0000001
-            if abs(round(e_val) - e_val) > epsilon:
-                # print(f"edge {e_idx} with value {e_val} is not integer. Splitting...")
-                return edges_by_index[e_idx], e_idx, e_val
-    elif method == "pseudocost":
-        e_idx, e_val = pseudocost(problem.model.char_vec(), pseudo_plus, pseudo_min)
-        if e_idx == -1:
-            return None
-        return edges_by_index[e_idx], e_idx, e_val
-
-    return None
-
-
-def compute_heur_amount(global_ub: float, global_lb: float):
-    lb_factor = (global_ub - global_lb) / global_ub if global_lb > 0 else 0
-    max_heur = 300
-    heur_zero = 0.25
-    heur_90th = 0.9
-    J = (1-heur_zero)/(1+heur_zero)
-    I = (1-heur_90th)/(1+heur_90th)
-    heur_amount = ((2*max_heur)/(1+math.pow(I, lb_factor/0.9)*math.pow(J, 1/max_heur))) - max_heur + random()
-    return round(heur_amount)
-
-
-def do_branch_and_bound(inst: Costs):
-    # Global upper and lower bounds, and best solution found so far.
-    # inst is adjacency matrix
-
-    global_problem = intialize(inst)
-    n = len(inst)
-
-    global_lb = global_problem.parent_lb
-    global_ub = initial_ub(inst)
-
-    base_tour = list(range(n))
-    base_cost = length_tour(inst, base_tour)
-
-    best_solution, global_ub = heuristic(global_problem, inst, base_tour, base_cost, reshuffle=True, heur_amount=200)
-
-    edges_by_index = get_edges_by_index(n)
-
-    m_edges = global_problem.model.p.m_edges
-
-    pseudo_plus = ([0.0] * m_edges, [0.0] * m_edges, list[int]())
-    pseudo_min = ([0.0] * m_edges, [0.0] * m_edges, list[int]())
-
-    # Initialization.
-    active_nodes: list[Subproblem] = [global_problem]
-    # we use a priority queue since we use the heuristic to quickly get good upper bounds
-    # this is best-first search
-    heapify(active_nodes)
-
-    start_opt = perf_counter_ns()
-    timer: Timer = (0, 0)
-
-    try:
-        # Main loop.
-        while active_nodes:
-            # Select an active node to process. We choose the one with the lowest lower bound (hopefully this will also
-            # have a good upper bound, alllowing us to prune faster)
-            problem = heappop(active_nodes)
-
-            # print(f"fixed {len(problem.fixed_one)} to one and fixed {len(problem.fixed_zero)} to zero")
-            
-            heur_amount = compute_heur_amount(global_ub, global_lb)
-
-            # Process the node.
-            try:
-                lb, ub, tour, timer = compute_bounds(
-                    inst, problem, best_solution, global_ub, timer, heur_amount
-                )
-                if problem.branch_e_idx != -1:
-                    update_eta_sigma(
-                        pseudo_plus,
-                        pseudo_min,
-                        problem.upward_branch,
-                        problem.branch_e_idx,
-                        problem.parent_lb,
-                        problem.parent_branch_e_val,
-                        lb,
-                    )
-                # print(f"New suproblem: lb={lb}, ub={ub} (glb={global_lb}, gub={global_ub})")
-            except InfeasibleRelaxation:
-                # print("Infeasible suproblem...")
-                # Pruned by infeasibility.
-                continue
-
-            # Update global upper bound.
-            if ub < global_ub:
-                global_ub = ub
-                best_solution = tour
-                print(f"Improved upper bound. (glb={global_lb}, gub={global_ub})")
-
-            # by heap property we have that active_nodes[0] has the lowest lower bound
-            new_global_lb = min(lb, active_nodes[0].parent_lb) if active_nodes else lb
-
-            # if it's greater than global ub we've already found an optimum and we're just making things worse
-            if new_global_lb > global_lb and new_global_lb <= global_ub:
-                global_lb = new_global_lb
-                print(
-                    f"Improved lower bound. (lb={lb} glb={global_lb}, gub={global_ub})"
-                )
-
-            # Prune by bound
-            if lb > global_ub:
-                continue
-
-            # Prune by optimality
-            if lb == global_ub:
-                continue
-
-            # we use pseudocost branching to find the best variable to branch on
-            branch_var_res = find_branch_variable(
-                problem, edges_by_index, pseudo_plus, pseudo_min
-            )
-            if branch_var_res is None:
-                # we've found an integer solution that the heuristic couldn't find
-                print(f"Integer LP solution...")
-                if lb < global_ub:
-                    tour = problem.model.get_tour(edges_by_index)
-                    global_ub = lb
-                    best_solution = tour
-                    print(f"Improved upper bound {global_ub}.")
-                continue
-
-            branch_edge, branch_edge_idx, branch_e_value = branch_var_res
-
-            problem_l, problem_r = branch_variable(
-                problem, branch_edge, branch_edge_idx, branch_e_value, lb
-            )
-            heappush(active_nodes, problem_l)
-            heappush(active_nodes, problem_r)
-    except KeyboardInterrupt:
-        print("Keyboard interrupt. Intermediate result:")
-
-    assert global_ub >= global_lb
-
-    opt_time = (perf_counter_ns() - start_opt) / 1e9
-    print(f"\t- integer optimal: {length_tour(inst, best_solution)}")
-    print(f"\t- optimal tour: {best_solution}")
-    timer_times = (
-        f"({timer[0]/1e9} s solving LP's. {timer[1]/1e9} s computing heuristics.)"
-    )
-    print(
-        f"Optimizing using B&B with cutting plane relaxation and Lin-Kernighan took {opt_time} s. {timer_times}"
-    )
-
-    # Return optimal solution.
-    return global_ub, best_solution
 
 
 def gurobi_integer(inst: list[list[float]]):

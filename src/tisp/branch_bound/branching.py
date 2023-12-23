@@ -1,6 +1,10 @@
-import math
-import gurobipy as gp
 
+import math
+from typing import Literal, Optional
+from tisp.heuristic.compute import heur_fix
+from tisp.lp.model import lp_copy_fix
+
+from tisp.types import Edge, EdgeValues, PseudoList, Subproblem, SubproblemState
 
 def compute_pseudoscore(
     index_j: int, sigma_j: list[float], eta_j: list[float], initialized_j: list[int]
@@ -15,9 +19,6 @@ def compute_pseudoscore(
         return sum(sigmas_d_etas) / len(initialized_j)
 
     return sigma_j[index_j] / eta_j[index_j]
-
-
-PseudoList = tuple[list[float], list[float], list[int]]
 
 
 def pseudocost(
@@ -86,5 +87,70 @@ def update_eta_sigma(
             initialized_j_min.append(var_j)
         eta_j_min[var_j] += 1
         sigma_j_min[var_j] += p_i_min
+
+    return None
+
+
+def branch_variable(
+    problem: SubproblemState, edge: Edge, e_idx: int, branch_e_val: float, parent_lb: float
+):
+    lp, fixed_one, fixed_zero, _, _, _, heur_costs = problem
+
+    new_model_l = lp_copy_fix(lp, e_idx, 1)
+    new_model_r = lp_copy_fix(lp, e_idx, 0)
+
+    fixed_one_l = fixed_one + [edge]
+    fixed_zero_r = fixed_zero + [edge]
+
+    heur_costs_l = heur_fix(heur_costs, edge, 1)
+    heur_costs_r = heur_fix(heur_costs, edge, 0)
+
+    problem_l = Subproblem(
+        parent_lb,
+        (
+            new_model_l,
+            fixed_one_l,
+            fixed_zero,
+            e_idx,
+            True,
+            branch_e_val,
+            heur_costs_l,
+        )
+    )
+    problem_r = Subproblem(
+        parent_lb,
+        (
+            new_model_r,
+            fixed_one,
+            fixed_zero_r,
+            e_idx,
+            False,
+            branch_e_val,
+            heur_costs_r,
+        )
+    )
+
+    return problem_l, problem_r
+
+
+def find_branch_variable(
+    edge_values: EdgeValues,
+    edges_by_index: dict[int, tuple[int, int]],
+    pseudo_plus: PseudoList,
+    pseudo_min: PseudoList,
+    method: Literal["pseudocost", "first-non-integer"] = "pseudocost",
+) -> Optional[tuple[Edge, int, float]]:
+    
+    if method == "first-non-integer":
+        for e_idx, e_val in enumerate(edge_values):
+            epsilon = 0.0000001
+            if abs(round(e_val) - e_val) > epsilon:
+                # print(f"edge {e_idx} with value {e_val} is not integer. Splitting...")
+                return edges_by_index[e_idx], e_idx, e_val
+    elif method == "pseudocost":
+        e_idx, e_val = pseudocost(edge_values, pseudo_plus, pseudo_min)
+        if e_idx == -1:
+            return None
+        return edges_by_index[e_idx], e_idx, e_val
 
     return None

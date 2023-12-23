@@ -1,8 +1,11 @@
 import random
 from typing import Iterable, Optional
 from functools import reduce
+from tisp.tour import normalize_tour
 
-Constants = tuple[int, Costs, list[list[int]]]
+from tisp.types import HeurConstants, Edge, HeurConstants, Tour
+
+
 
 
 def random_tour(n: int) -> list[int]:
@@ -80,7 +83,7 @@ def edge_in_tour(tour: list[int], e: Edge):
             return True
 
 
-def improve_tour(tour: Tour, t0: int, seen_tours: set[bytes], c: Constants):
+def improve_tour(tour: Tour, t0: int, seen_tours: set[bytes], c: HeurConstants):
     _, costs, _ = c
     current_tour = tour.copy()
     t0_i = tour.index(t0)
@@ -139,7 +142,7 @@ def select_x(
     current_tour: Tour,
     broken_edges: set[Edge],
     joined_edges: set[Edge],
-    c: Constants,
+    c: HeurConstants,
 ) -> XResult:
     _, costs, _ = c
     t2 = current_tour[t2_i]
@@ -178,20 +181,7 @@ def select_x(
 YResult = Optional[tuple[float, int, int, int, int, set[Edge], set[Edge]]]
 
 
-def best_neighbors(costs: list[list[float]], group_len=5) -> list[list[int]]:
-    n = len(costs)
-    best_nbs: list[list[int]] = []
-    for i, cost_row in enumerate(costs):
-        best_costs = sorted(zip(cost_row, range(n)))
-        best_group = []
-        for _, j in best_costs:
-            if i == j:
-                continue
-            best_group.append(j)
-            if len(best_group) == group_len:
-                break
-        best_nbs.append(best_group)
-    return best_nbs
+
 
 
 def select_y(
@@ -201,7 +191,7 @@ def select_y(
     current_tour: Tour,
     broken_edges: set[Edge],
     joined_edges: set[Edge],
-    c: Constants,
+    c: HeurConstants,
 ) -> YResult:
     _, costs, best_nbs = c
     t0 = current_tour[t0_i]
@@ -272,7 +262,7 @@ class SeenTour(Exception):
 
 
 def move_sequence(
-    base_start: MoveState, seen_tours: set[bytes], c: Constants
+    base_start: MoveState, seen_tours: set[bytes], c: HeurConstants
 ) -> Optional[tuple[Tour, float]]:
     queue: list[MoveState] = [base_start]
 
@@ -346,7 +336,7 @@ def best_move(
     broken_cost: float,
     current_tour: Tour,
     seen_tours: set[bytes],
-    constants: Constants,
+    constants: HeurConstants,
 ) -> Optional[tuple[Tour, float]]:
     t1 = current_tour[t1_i]
     _, costs, best_nbs = constants
@@ -395,44 +385,4 @@ def best_move(
     return None
 
 
-def length_tour(graph, tour):
-    length = graph[tour[-1]][tour[0]]
-    for i in range(len(tour) - 1):
-        length += graph[tour[i]][tour[i + 1]]
 
-    return length
-
-
-def lkh(initial_tour: Tour, costs: Costs):
-    n = len(costs)
-
-    last_tour = initial_tour
-    new_tour = initial_tour
-
-    best_nbs = best_neighbors(costs)
-
-    seen_tours = set()
-
-    while new_tour is not None:
-        untried_tbase = shuffle_iter(new_tour)
-
-        last_tour = new_tour
-        new_tour = None
-
-        while len(untried_tbase) > 0:
-            tbase = untried_tbase.pop()
-            improve_result = improve_tour(
-                last_tour, tbase, seen_tours, (n, costs, best_nbs)
-            )
-
-            if improve_result is None:
-                continue
-            else:
-                improved_tour, _ = improve_result
-                tour_repr = tour_unique(improved_tour)
-                seen_tours.add(tour_repr)
-
-                new_tour = improved_tour
-                break
-
-    return last_tour

@@ -560,12 +560,11 @@ def normalize_tour_repr(tour: list[int]):
     i_zero = tour.index(0)
     prev_part = tour[:i_zero]
     normalized_tour = tour[i_zero:] + prev_part
-    byte_seq = [i.to_bytes(bytes_per_n, byteorder='big') for i in normalized_tour]
-    tour_bytes = b''.join(byte_seq)
-    tour_bytes_rev = byte_seq[0] + b''.join(reversed(byte_seq[1:]))
+    byte_seq = [i.to_bytes(bytes_per_n, byteorder="big") for i in normalized_tour]
+    tour_bytes = b"".join(byte_seq)
+    tour_bytes_rev = byte_seq[0] + b"".join(reversed(byte_seq[1:]))
 
     return tour_bytes, tour_bytes_rev
-    
 
 
 def lin_kernighan(
@@ -593,7 +592,7 @@ def lin_kernighan(
         # if new_tour_repr[0] in seen_tours:
         #     print("WEVE SEEN IT ALREADY")
         #     break
-        
+
         # seen_tours.add(new_tour_repr[0])
         # seen_tours.add(new_tour_repr[1])
 
@@ -715,7 +714,6 @@ def run():
     lin_length = length_tour(graph_l, lin_tour)
     print(f"- Lin-Kernighan 2: {lin_length}, {lin_time}s")
     print(lin_tour)
-
 
     # Lin-Kernighan fixed
     # start_time = perf_counter_ns()

@@ -415,14 +415,21 @@ def get_arc_idxs_for_v(vertex: int, n: int, incoming: bool):
     lower_add = 0 if incoming else 1
     higher_add = 1 - lower_add
 
-    lower_edges = [2*edge_idx(other_v, vertex, n)+lower_add for other_v in range(0, vertex)]
-    higher_edges = [2*edge_idx(vertex, other_v, n)+higher_add for other_v in range(vertex+1, n)]
+    lower_edges = [
+        2 * edge_idx(other_v, vertex, n) + lower_add for other_v in range(0, vertex)
+    ]
+    higher_edges = [
+        2 * edge_idx(vertex, other_v, n) + higher_add
+        for other_v in range(vertex + 1, n)
+    ]
 
     return lower_edges + higher_edges
+
 
 def get_in_arc_idxs_for_v(vertex: int, n: int):
     """Return the indexes of the incoming arcs for a vertex, i.e. where v is the head (so second vertex in the ordered pair)."""
     return get_arc_idxs_for_v(vertex, n, True)
+
 
 def get_out_arc_idxs_for_v(vertex: int, n: int):
     """Return the indexes of the incoming arcs for a vertex, i.e. where v is the head (so second vertex in the ordered pair)."""
@@ -442,20 +449,26 @@ def extended_formulation(n: int, edge_costs: EdgeCosts, integer: bool = False):
     # for i<j (i, j) is the (n-1 + n-2 + ... + n - i) + (j - i -1)th element
     # i.e. index is i(2n-i-1)/2 + (j-i-1)
     edge_vtype = gp.GRB.BINARY if integer else gp.GRB.CONTINUOUS
-    char_vec = [model.addVar(lb=0, ub=1, name=f"char_{e}", vtype=edge_vtype) for e in range(m_edges)]
+    char_vec = [
+        model.addVar(lb=0, ub=1, name=f"char_{e}", vtype=edge_vtype)
+        for e in range(m_edges)
+    ]
     num_arcs = 2 * m_edges
     # rows are vertices without r
     # columns are the arcs, with same indexing as above
     # but where (i, j) and (j, i) follow each other (so edge_index * 2 for (i, j)
     # with still i<j
-    flow: list[list[gp.Var]] = [[model.addVar(lb=0, name=f"f_{s}({a})") for a in range(num_arcs)] for s in range(1, n)]
+    flow: list[list[gp.Var]] = [
+        [model.addVar(lb=0, name=f"f_{s}({a})") for a in range(num_arcs)]
+        for s in range(1, n)
+    ]
     z = gp.LinExpr(edge_costs, char_vec)
     model.setObjective(z, gp.GRB.MINIMIZE)
 
     # each column is all the vertices other than the vertex corresponding to column
     # so (n-1), n array
     cut_arr = edge_idxs_for_all_v(n)
-    coeff_1 = [1]*len(cut_arr[0])
+    coeff_1 = [1] * len(cut_arr[0])
     for v in range(n):
         v_cut = cut_arr[v]
         cut_x = [char_vec[e] for e in v_cut]
@@ -466,8 +479,8 @@ def extended_formulation(n: int, edge_costs: EdgeCosts, integer: bool = False):
 
     cut_in_r = cuts_in[0]
     cut_out_r = cuts_out[0]
-    coeff_r_1_in = [1]*len(cut_in_r)
-    coeff_r_1_out = [1]*len(cut_out_r)
+    coeff_r_1_in = [1] * len(cut_in_r)
+    coeff_r_1_out = [1] * len(cut_out_r)
 
     for s in range(1, n):
         f_s = flow[s - 1]
@@ -480,13 +493,12 @@ def extended_formulation(n: int, edge_costs: EdgeCosts, integer: bool = False):
             name=f"f_{s}(delta_out(r))-f_{s}(delta_in(r))>=2",
         )
 
-
     for s in range(1, n):
         f_s = flow[s - 1]
         # we make sure we get arrays correspond to the right index of the char. vector
         for e in range(m_edges):
-            a1 = 2*e
-            a2 = 2*e + 1
+            a1 = 2 * e
+            a2 = 2 * e + 1
             model.addConstr(f_s[a1] - char_vec[e] <= 0, name=f"f_{a1}<=x({a1})")
             model.addConstr(f_s[a2] - char_vec[e] <= 0, name=f"f_{a2}<=x({a2})")
 
@@ -497,8 +509,8 @@ def extended_formulation(n: int, edge_costs: EdgeCosts, integer: bool = False):
 
             cut_out_v = cuts_out[other_v]
             cut_in_v = cuts_in[other_v]
-            coeff_v_1_in = [1]*len(cut_in_v)
-            coeff_v_1_out = [1]*len(cut_out_v)
+            coeff_v_1_in = [1] * len(cut_in_v)
+            coeff_v_1_out = [1] * len(cut_out_v)
             fs_v_out = [f_s[v] for v in cut_out_v]
             fs_v_in = [f_s[v] for v in cut_in_v]
 
@@ -562,5 +574,5 @@ def parse_line(ln: str) -> list[float]:
     return list(map(lambda i: float(i), ln.rstrip().split(" ")))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     run()
