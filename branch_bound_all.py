@@ -11,9 +11,7 @@ from time import perf_counter_ns
 
 import gurobipy as gp
 
-from bb_improvements import exchange_edges, try_is_tour, vert_ngbhs_to_tour
-
-# from bb_improvements import sw_minimum_cut
+from lin_kernighan_2 import lin_kernighan2, normalize_tour, shuffle_normalized
 
 
 # ==================================================================
@@ -241,7 +239,7 @@ class TSPModel:
                 queue.append([node_1, node_2])
 
         # the start/endpoint is going to be added twice, so we have to remove it
-        return tour[1:]
+        return normalize_tour(tour[1:])
 
     def print_sol(self):
         char_vec, x_values = self.char_vec_values()
@@ -800,15 +798,96 @@ XEvaluation = tuple[
         SelectedEdges,
         SelectedEdges,
         TourState,
-        set[bytes],
         Optional[XResult],
     ],
 ]
 YEvaluation = tuple[
     Literal[False],
-    tuple[int, UsedEdges, UsedEdges, SelectedEdges, SelectedEdges, TourState, set[bytes]],
+    tuple[int, UsedEdges, UsedEdges, SelectedEdges, SelectedEdges, TourState],
 ]
-EvalImprovement = tuple[Literal[None], tuple[list[int], float, bytes]]
+EvalImprovement = tuple[Literal[None], tuple[list[int], float]]
+
+
+
+def try_is_tour(
+    n: int, tour_n_a_dict: VertNghbs, x_remove: Edge, y_repl: Edge, moves: list[tuple[Edge, Edge]], base_tgraph: VertNghbs
+) -> tuple[bool, list[int]]:
+
+    is_tour, maybe_tour = is_node_edges_tour(n, tour_n_a_dict, x_remove, y_repl)
+
+    return is_tour, maybe_tour
+
+
+def exchange_edges(
+    node_edges: VertNghbs,
+    x_remove: Edge,
+    y_repl: Edge,
+    copy=True,
+) -> VertNghbs:
+    if copy:
+        node_edges = copy_node_edges(node_edges)
+    t_x0, t_x1 = x_remove
+    t_y0, t_y1 = y_repl
+
+    edges_x0 = node_edges[t_x0]
+    edges_x1 = node_edges[t_x1]
+    edges_x0.discard(t_x1)
+    edges_x1.discard(t_x0)
+    node_edges[t_y0].add(t_y1)
+    node_edges[t_y1].add(t_y0)
+
+    return node_edges
+
+
+def vert_ngbhs_to_tour_seen(v_n: VertNghbs) -> list[int]:
+    if len(v_n) == 0:
+        return []
+    current_node = next(iter(v_n))
+    first_node = current_node
+    prev_node = None
+    tour = [current_node]
+    while True:
+        adjacent = v_n[current_node]
+        if len(adjacent) != 2:
+            # not a valid tour
+            return []
+        not_seen = None
+        for adj in adjacent:
+            if adj != prev_node:
+                not_seen = adj
+                break
+        if not_seen is None:
+            return tour
+        
+        if not_seen == first_node:
+            return tour
+
+        prev_node = current_node
+        current_node = not_seen
+        
+        tour.append(not_seen)
+
+
+def is_node_edges_tour(n: int, node_edges: VertNghbs, x_remove: Edge, y_repl: Edge) -> tuple[bool, list[int]]:
+    maybe_tour_n_a_dict = exchange_edges(
+        node_edges, x_remove, y_repl, copy=False
+    )
+    tour = vert_ngbhs_to_tour_seen(maybe_tour_n_a_dict)
+    exchange_edges(
+        maybe_tour_n_a_dict, y_repl, x_remove, copy=False
+    )
+
+    if len(tour) != n:
+        return False, []
+    return True, tour
+
+
+def copy_node_edges(node_edges: VertNghbs) -> VertNghbs:
+    node_edge_copy = dict()
+    for t in node_edges:
+        node_edge_copy[t] = node_edges[t].copy()
+
+    return node_edge_copy
 
 
 def evaluate_x(
@@ -818,7 +897,6 @@ def evaluate_x(
     sel_x: SelectedEdges,
     sel_y: SelectedEdges,
     ts: TourState,
-    seen_tours: set[bytes],
     xi_from_y: Optional[XResult] = None,
 ) -> Optional[Union[YEvaluation, EvalImprovement]]:
     xi_result = next_x(i, used_x, sel_y, ts) if xi_from_y is None else xi_from_y
@@ -827,10 +905,6 @@ def evaluate_x(
 
         # check bettter tour!
         if i >= 1:
-            if (new_repr := normalize_tour_repr(new_tour)) in seen_tours:
-                # print("SEEEEEN!!")
-                return (None, (new_tour, -1.0, new_repr))
-            
             if i == 1:
                 partial_gain_im1 = 0
             else:
@@ -839,16 +913,16 @@ def evaluate_x(
             join_gain_i = exchange_gain(xi, joined_i, ts.costs)
 
             if partial_gain_im1 + join_gain_i > 0:
-                return (None, (new_tour, join_gain_i, normalize_tour_repr(new_tour)))
+                return (None, (new_tour, join_gain_i))
 
         sel_x[i] = xi
         add_create_edge(i, used_x, xi)
-        return (False, (i, used_x, used_y, sel_x, sel_y, ts, seen_tours))
+        return (False, (i, used_x, used_y, sel_x, sel_y, ts))
 
     if i == 1:
         used_x.pop(1, None)
         # used_y.pop(0, None)
-        return (False, (0, used_x, used_y, sel_x, sel_y, ts, seen_tours))
+        return (False, (0, used_x, used_y, sel_x, sel_y, ts))
     elif i == 0:
         # exhausted all x_0 so go to different t_base
         return None
@@ -863,7 +937,6 @@ def evaluate_y(
     sel_x: SelectedEdges,
     sel_y: SelectedEdges,
     ts: TourState,
-    seen_tours: set[bytes]
 ) -> XEvaluation:
     yi_result = next_y(i, used_x, used_y, sel_x, sel_y, ts)
 
@@ -887,27 +960,27 @@ def evaluate_y(
 
         i = i + 1
 
-        return (True, (i, used_x, used_y, sel_x, sel_y, ts, seen_tours, xi1_res))
+        return (True, (i, used_x, used_y, sel_x, sel_y, ts, xi1_res))
 
     if i >= 2:
         # since we just tried for y_1 we know no more exist
-        return (True, (1, used_x, used_y, sel_x, sel_y, ts, seen_tours, None))
+        return (True, (1, used_x, used_y, sel_x, sel_y, ts, None))
     elif i == 1:
         used_y.pop(1, None)
-        return (True, (1, used_x, used_y, sel_x, sel_y, ts, seen_tours, None))
+        return (True, (1, used_x, used_y, sel_x, sel_y, ts, None))
     else:
         used_y.pop(0, None)
-        return (True, (0, used_x, used_y, sel_x, sel_y, ts, seen_tours, None))
+        return (True, (0, used_x, used_y, sel_x, sel_y, ts, None))
 
 
-def improve_tour(n: int, tbase: int, tour: list[int], costs: list[list[float]], seen_tours: set[bytes]):
+def improve_tour(n: int, tbase: int, tour: list[int], costs: list[list[float]]):
     d_tour = dict_tour(tour)
     tgraph = d_tour_to_node_adj_dict(n, d_tour)
     ts = TourState(n, tbase, tour, d_tour, tgraph, costs, dict())
 
     # Very simple iterative implementation of the recursive algorithm, apologies for the ugly code
     queue: list[Union[XEvaluation, YEvaluation]] = [
-        (True, (0, dict(), dict(), dict(), dict(), ts, seen_tours, None))
+        (True, (0, dict(), dict(), dict(), dict(), ts, None))
     ]
 
     while len(queue) > 0:
@@ -965,9 +1038,6 @@ def lin_kernighan(
     new_tour = tour
     tour_gain = 0
 
-    # print(f"Starting with tour: {tour}")
-    seen_tours = set()
-
     while new_tour is not None:
         if no_random:
             untried_tbase = new_tour.copy()
@@ -978,16 +1048,12 @@ def lin_kernighan(
 
         while len(untried_tbase) > 0:
             tbase = untried_tbase.pop()
-            improve_result = improve_tour(n, tbase, last_tour, costs, seen_tours)
+            improve_result = improve_tour(n, tbase, last_tour, costs)
 
             if improve_result is None:
                 continue
             else:
-                improved_tour, improvement, tour_repr = improve_result
-                if tour_repr in seen_tours:
-                    # print("seen already!!!!!!")
-                    return last_tour, tour_gain
-                seen_tours.add(tour_repr)
+                improved_tour, improvement = improve_result
                 new_tour = improved_tour
                 tour_gain += improvement
                 break
@@ -1147,13 +1213,14 @@ def compute_bounds(
 
     try:
         heur_tour, ub = heuristic(
-            problem, costs, best_solution, best_solution_cost, heur_amount_i
+            problem, costs, best_solution, best_solution_cost, heur_amount=heur_amount_i
         )
     except:
+        print(f"best solution {best_solution} with fixed {problem.fixed_one} to 1 and {problem.fixed_zero} to zero")
         # print("best solution not feasible, try new feasible tour")
         feas_tour = feasible_tour(costs, problem.fixed_one, problem.fixed_zero)
         tour_cost = length_tour(costs, feas_tour)
-        heur_tour, ub = heuristic(problem, costs, feas_tour, tour_cost, heur_amount_i)
+        heur_tour, ub = heuristic(problem, costs, feas_tour, tour_cost, heur_amount=heur_amount_i)
 
     after_heur = perf_counter_ns()
 
@@ -1175,18 +1242,25 @@ def heuristic(
     costs: Costs,
     best_solution: list[int],
     best_sol_cost: float,
+    reshuffle: bool = False,
     heur_amount: int = 5,
 ) -> tuple[list[int], float]:
     if heur_amount <= 0:
         return best_solution, best_sol_cost
 
-    best_heur_tour, _ = lin_kernighan(
-        problem.heur_costs, start_tour=best_solution, no_random=True
+    # best_heur_tour, _ = lin_kernighan(
+    #     problem.heur_costs, start_tour=best_solution, no_random=True
+    # )
+    best_heur_tour = lin_kernighan2(
+        best_solution, problem.heur_costs
     )
     best_cost = length_tour(costs, best_heur_tour)
     lengths = []
     for _ in range(heur_amount):
-        tour, _ = lin_kernighan(problem.heur_costs, start_tour=best_solution)
+        base_tour = best_solution
+        if reshuffle:
+            base_tour = shuffle_normalized(base_tour)
+        tour = lin_kernighan2(best_solution, problem.heur_costs)
         tour_cost = length_tour(costs, tour)
         lengths.append(tour_cost)
         if tour_cost < best_cost:
@@ -1279,6 +1353,17 @@ def find_branch_variable(
     return None
 
 
+def compute_heur_amount(global_ub: float, global_lb: float):
+    lb_factor = (global_ub - global_lb) / global_ub if global_lb > 0 else 0
+    max_heur = 300
+    heur_zero = 0.25
+    heur_90th = 0.9
+    J = (1-heur_zero)/(1+heur_zero)
+    I = (1-heur_90th)/(1+heur_90th)
+    heur_amount = ((2*max_heur)/(1+math.pow(I, lb_factor/0.9)*math.pow(J, 1/max_heur))) - max_heur + random()
+    return round(heur_amount)
+
+
 def do_branch_and_bound(inst: Costs):
     # Global upper and lower bounds, and best solution found so far.
     # inst is adjacency matrix
@@ -1289,7 +1374,10 @@ def do_branch_and_bound(inst: Costs):
     global_lb = global_problem.parent_lb
     global_ub = initial_ub(inst)
 
-    best_solution = list(range(n))
+    base_tour = list(range(n))
+    base_cost = length_tour(inst, base_tour)
+
+    best_solution, global_ub = heuristic(global_problem, inst, base_tour, base_cost, reshuffle=True, heur_amount=200)
 
     edges_by_index = get_edges_by_index(n)
 
@@ -1307,8 +1395,6 @@ def do_branch_and_bound(inst: Costs):
     start_opt = perf_counter_ns()
     timer: Timer = (0, 0)
 
-    heur_amount = 25
-
     try:
         # Main loop.
         while active_nodes:
@@ -1316,15 +1402,14 @@ def do_branch_and_bound(inst: Costs):
             # have a good upper bound, alllowing us to prune faster)
             problem = heappop(active_nodes)
 
-            heur_amount_i = round(
-                math.ceil(random() < heur_amount) * max(heur_amount, 0.501)
-            )
-            heur_amount = max(0.25, heur_amount / 1.3)
+            # print(f"fixed {len(problem.fixed_one)} to one and fixed {len(problem.fixed_zero)} to zero")
+            
+            heur_amount = compute_heur_amount(global_ub, global_lb)
 
             # Process the node.
             try:
                 lb, ub, tour, timer = compute_bounds(
-                    inst, problem, best_solution, global_ub, timer, heur_amount_i
+                    inst, problem, best_solution, global_ub, timer, heur_amount
                 )
                 if problem.branch_e_idx != -1:
                     update_eta_sigma(
@@ -1496,12 +1581,12 @@ def feasible_tour(
 
 def main():
     # inst_path = get_inst_path()
-    inst_path = Path("tsp/gr48.dat")
+    inst_path = Path("tsp/gr96.dat")
     graph_l = parse_as_adj_matrix(inst_path)
 
     do_branch_and_bound(graph_l)
 
-    # gurobi_integer(graph_l)
+    gurobi_integer(graph_l)
 
 
 main()

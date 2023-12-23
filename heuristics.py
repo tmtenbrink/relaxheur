@@ -8,6 +8,8 @@ from dataclasses import dataclass
 import random
 from typing import Iterable, Optional, Union, Literal, Optional, Union, overload
 
+from lin_kernighan_2 import lin_kernighan2
+
 
 @overload
 def parse_line(ln: str, as_float: Literal[True]) -> list[float]:
@@ -675,6 +677,7 @@ def run():
     # inst_path = get_inst_path()
     inst_path = Path("tsp/gr48.dat")
     graph_l = parse_as_adj_matrix(inst_path)
+    n = len(graph_l)
 
     print("Value of heuristic")
 
@@ -699,12 +702,20 @@ def run():
 
     # Lin-Kernighan
     graph_l_fl = parse_as_adj_matrix(inst_path, as_float=True)
+    # start_time = perf_counter_ns()
+    # lin_tour, gain = lin_kernighan(graph_l_fl)
+    # lin_time = (perf_counter_ns() - start_time) / 1e9
+    # lin_length = length_tour(graph_l, lin_tour)
+    # print(f"- Lin-Kernighan: {lin_length}, {lin_time}s")
+    # print(lin_tour)
+
     start_time = perf_counter_ns()
-    lin_tour, gain = lin_kernighan(graph_l_fl)
+    lin_tour = lin_kernighan2(list(range(n)), graph_l_fl)
     lin_time = (perf_counter_ns() - start_time) / 1e9
     lin_length = length_tour(graph_l, lin_tour)
-    print(f"- Lin-Kernighan: {lin_length}, {lin_time}s")
+    print(f"- Lin-Kernighan 2: {lin_length}, {lin_time}s")
     print(lin_tour)
+
 
     # Lin-Kernighan fixed
     # start_time = perf_counter_ns()

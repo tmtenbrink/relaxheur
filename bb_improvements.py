@@ -129,7 +129,6 @@ def exchange_edges(
     x_remove: Edge,
     y_repl: Edge,
     copy=True,
-    require_existence=True,
 ) -> VertNghbs:
     if copy:
         node_edges = copy_node_edges(node_edges)
@@ -138,11 +137,8 @@ def exchange_edges(
 
     edges_x0 = node_edges[t_x0]
     edges_x1 = node_edges[t_x1]
-    if require_existence or t_x1 in edges_x0:
-        edges_x0.remove(t_x1)
-    if require_existence or t_x0 in edges_x1:
-        edges_x1.remove(t_x0)
-
+    edges_x0.discard(t_x1)
+    edges_x1.discard(t_x0)
     node_edges[t_y0].add(t_y1)
     node_edges[t_y1].add(t_y0)
 
@@ -204,6 +200,35 @@ def vert_nghbs_to_tour_exchange(n: int, v_n: VertNghbs, x_remove: Edge, y_repl: 
         current_node = next_nb
 
 
+def vert_ngbhs_to_tour_seen(v_n: VertNghbs) -> list[int]:
+    if len(v_n) == 0:
+        return []
+    current_node = next(iter(v_n))
+    first_node = current_node
+    prev_node = None
+    tour = [current_node]
+    while True:
+        adjacent = v_n[current_node]
+        if len(adjacent) != 2:
+            # not a valid tour
+            return []
+        not_seen = None
+        for adj in adjacent:
+            if adj != prev_node:
+                not_seen = adj
+                break
+        if not_seen is None:
+            return tour
+        
+        if not_seen == first_node:
+            return tour
+
+        prev_node = current_node
+        current_node = not_seen
+        
+        tour.append(not_seen)
+
+
 def vert_ngbhs_to_tour(v_n: VertNghbs) -> list[int]:
     if len(v_n) == 0:
         return []
@@ -231,20 +256,17 @@ def vert_ngbhs_to_tour(v_n: VertNghbs) -> list[int]:
 
 
 def is_node_edges_tour(n: int, node_edges: VertNghbs, x_remove: Edge, y_repl: Edge) -> tuple[bool, list[int]]:
-
-    
-    
     maybe_tour_n_a_dict = exchange_edges(
-        node_edges, x_remove, y_repl, require_existence=False, copy=False
+        node_edges, x_remove, y_repl, copy=False
     )
     # if len(maybe_tour_n_a_dict) == 0:
     #     return False, []
     
     # maybe replace by whether t0 is reachable or something else
-    tour = vert_ngbhs_to_tour(maybe_tour_n_a_dict)
+    tour = vert_ngbhs_to_tour_seen(maybe_tour_n_a_dict)
 
     exchange_edges(
-        maybe_tour_n_a_dict, y_repl, x_remove, require_existence=False, copy=False
+        maybe_tour_n_a_dict, y_repl, x_remove, copy=False
     )
 
     if len(tour) != n:

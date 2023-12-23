@@ -17,24 +17,24 @@ def normalize_tour_repr(tour: list[int]):
     return min(tour_bytes, tour_bytes_rev)
 
 
-def random_tour(n: int) -> list[int]:
-    return shuffle_iter(range(n))
+# def random_tour(n: int) -> list[int]:
+#     return shuffle_iter(range(n))
 
 
-def shuffle_iter(itrble: Iterable[int]) -> list[int]:
-    """Returns a shuffled copy of the iterable as a list."""
-    randoms = [(random(), i) for i in itrble]
-    randoms.sort(key=lambda l: l[0])
-    shuffled = list(map(lambda r: r[1], randoms))
-    return shuffled
+# def shuffle_iter(itrble: Iterable[int]) -> list[int]:
+#     """Returns a shuffled copy of the iterable as a list."""
+#     randoms = [(random(), i) for i in itrble]
+#     randoms.sort(key=lambda l: l[0])
+#     shuffled = list(map(lambda r: r[1], randoms))
+#     return shuffled
 
-n = 8
+# n = 8
 
-tours = [shuffle_iter(tour_n) for tour_n in [list(range(n)) for _ in range(20)]]
+# tours = [shuffle_iter(tour_n) for tour_n in [list(range(n)) for _ in range(20)]]
 
-for t in tours:
-    rev = normalize_tour_repr(list(reversed(t + [3])))
-    not_rev = normalize_tour_repr(t)
-    print(rev == not_rev)
+# for t in tours:
+#     rev = normalize_tour_repr(list(reversed(t + [3])))
+#     not_rev = normalize_tour_repr(t)
+#     print(rev == not_rev)
 
-print()
+# print()

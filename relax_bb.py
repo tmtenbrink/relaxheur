@@ -523,3 +523,44 @@ def build_model(n: int, edge_costs: EdgeCosts, formulation: Formulation, integer
         if integer:
             raise ValueError("Cutting plane model cannot compute integer value!")
         return cutting_plane_model(n, edge_costs)
+
+
+def run():
+    # inst_path = get_inst_path()
+    inst_path = Path("tsp/gr48.dat")
+    graph_l = parse_as_adj_matrix(inst_path)
+    edge_costs = compute_edge_costs(graph_l)
+    n = len(graph_l)
+    m = build_model(n, edge_costs, Formulation.CUTTING_PLANE)
+    m.optimize_with_val()
+
+
+def compute_edge_costs(costs: Costs) -> EdgeCosts:
+    n = len(costs)
+    m_edges = (n * (n - 1)) // 2
+    edge_costs = [0.0] * m_edges
+
+    for row_num, row in enumerate(costs):
+        target_start = row_num * (2 * n - row_num - 1) // 2
+        target_end = target_start + (n - row_num - 1)
+        for i, e in enumerate(range(target_start, target_end)):
+            edge_costs[e] = row[row_num + 1 + i]
+
+    return edge_costs
+
+
+def parse_as_adj_matrix(inst_path: Path) -> list[list[float]]:
+    with open(inst_path, "r") as f:
+        lines = f.readlines()
+
+    adj_matrix = list(map(lambda ln: parse_line(ln), lines[1:]))
+
+    return adj_matrix
+
+
+def parse_line(ln: str) -> list[float]:
+    return list(map(lambda i: float(i), ln.rstrip().split(" ")))
+
+
+if __name__ == '__main__':
+    run()
