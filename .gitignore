@@ -4,3 +4,4 @@ tsp
 .vscode
 **/*.pyc
 __pycache__
+dist
