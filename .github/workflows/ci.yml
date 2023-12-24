@@ -21,10 +21,10 @@ jobs:
       - name: Build
         run: poetry build
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: dist
-          path: ${{ github.workspace }}/dist/
+          name: dist_artifact
+          path: dist
           if-no-files-found: error
   publish:
     needs: [buildtest]
@@ -34,8 +34,8 @@ jobs:
     - name: Download artifact
       uses: actions/download-artifact@v4
       with:
-        name: dist
-        path: ${{ github.workspace }}/dist/
+        name: dist_artifact
+        path: dist
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
