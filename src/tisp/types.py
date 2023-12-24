@@ -5,13 +5,13 @@ from functools import total_ordering
 import mip
 
 # EDGE INDEX CONVENTION:
-# The lower node index precedes the higher node index. Start with node 0. Edge 0 is then (0, 1). Edge 1 is (0, 2), ... 
+# The lower node index precedes the higher node index. Start with node 0. Edge 0 is then (0, 1). Edge 1 is (0, 2), ...
 # up to Edge n-2 is (0, n-1). Then Edge n-1 is (1, 1) [we already had (1, 0)!], Edge n is (1, 2), ...
 # This gives m=n*(n-1)/2 edges.
 # If the lower index node is i and the higher index node is j, the edge index is:
 # (i * (2n - i - 1) / 2) + (j - i - 1)
 
-# Adjacency matrix for all costs. costs[nd_a][nd_b] will give the cost of the edge (nd_a, nd_b). We assume the problem 
+# Adjacency matrix for all costs. costs[nd_a][nd_b] will give the cost of the edge (nd_a, nd_b). We assume the problem
 # to be symmetric, so the cost matrix is also symmetric.
 Costs = list[list[float]]
 # Costs indexed by edge, using our edge index convention.
@@ -37,16 +37,18 @@ Tour = list[int]
 
 ########## LP
 
+
 class Formulation(Enum):
     EXTENDED = auto()
     CUTTING_PLANE = auto()
+
 
 # n, m_edges, vertex_edges, edge_costs
 LPConstants = tuple[int, int, VertexEdges, EdgeCosts, EdgesByIndex]
 
 LPModel = tuple[mip.Model, Formulation, LPConstants]
 
-EdgeValue = tuple[float, list[tuple[int, int]]]
+MergedVertex = tuple[float, int, list[int]]
 
 ######### Heuristic
 
@@ -65,7 +67,7 @@ SubproblemState = tuple[LPModel, list[Edge], list[Edge], int, bool, float, HeurC
 
 Timer = tuple[int, int]
 
-    
+
 @total_ordering
 @dataclass
 class Subproblem:
@@ -75,6 +77,3 @@ class Subproblem:
     # we define lt method so that they can be compared by heapsort
     def __lt__(self, other):
         return self.parent_lb < other.parent_lb
-    
-
-

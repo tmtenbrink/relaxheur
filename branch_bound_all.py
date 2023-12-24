@@ -29,7 +29,6 @@ EdgeValue = tuple[float, list[tuple[int, int]]]
 # ==================================================================
 
 
-
 def get_edge_names(n: int):
     names = {}
     index = 0
@@ -51,9 +50,6 @@ def get_edges_by_index(n: int) -> dict[int, tuple[int, int]]:
             index += 1
 
     return edges_by_index
-
-
-
 
 
 class Formulation(Enum):
@@ -194,8 +190,6 @@ class TSPModel:
         return char_vec, x_values
 
 
-
-
 def sw_minimum_cut_phase(
     graph: list[list[EdgeValue]], a: int
 ) -> tuple[int, int, float, list[tuple[int, int]]]:
@@ -278,9 +272,6 @@ def compute_min_cut(x_values: list[float], n: int) -> tuple[float, list[int]]:
 
 class InfeasibleRelaxation(Exception):
     pass
-
-
-
 
 
 def cutting_plane_model(n: int, edge_costs: EdgeCosts):
@@ -432,9 +423,6 @@ def build_model(n: int, edge_costs: EdgeCosts, formulation: Formulation, integer
 # ==================================================================
 # =========================== Heuristics ===========================
 # ==================================================================
-
-
-
 
 
 def dict_tour(tour: list[int]) -> dict[int, tuple[int, int]]:
@@ -965,8 +953,6 @@ def check_fixed_tour(tour: list[int], fixed_one: list[Edge], fixed_zero: list[Ed
 # ==================================================================
 
 
-
-
 @total_ordering
 @dataclass
 class Subproblem:
@@ -987,17 +973,6 @@ class Subproblem:
 
 
 # LP time, heur time
-
-
-
-
-
-
-
-
-
-
-
 
 
 def gurobi_integer(inst: list[list[float]]):

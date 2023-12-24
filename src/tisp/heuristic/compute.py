@@ -27,9 +27,7 @@ def lkh(initial_tour: Tour, c: HeurConstants):
 
         while len(untried_tbase) > 0:
             tbase = untried_tbase.pop()
-            improve_result = improve_tour(
-                last_tour, tbase, set(), c
-            )
+            improve_result = improve_tour(last_tour, tbase, set(), c)
 
             if improve_result is None:
                 continue

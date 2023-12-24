@@ -1,6 +1,10 @@
 from heapq import heapify, heappop, heappush
 from time import perf_counter_ns
-from tisp.branch_bound.branching import branch_variable, find_branch_variable, update_eta_sigma
+from tisp.branch_bound.branching import (
+    branch_variable,
+    find_branch_variable,
+    update_eta_sigma,
+)
 from tisp.error import InfeasibleRelaxation
 from tisp.graph import best_neighbors, copy_costs
 from tisp.heuristic.compute import lkh
@@ -8,7 +12,17 @@ from tisp.lp.model import lp_edges, lp_initialize
 from tisp.lp.optimize import lp_optimize_optimal
 from tisp.tour import tour_cost, tour_from_edge_values
 
-from tisp.types import Costs, Edge, Formulation, HeurCosts, LPConstants, LPModel, Subproblem, SubproblemState, Timer
+from tisp.types import (
+    Costs,
+    Edge,
+    Formulation,
+    HeurCosts,
+    LPConstants,
+    LPModel,
+    Subproblem,
+    SubproblemState,
+    Timer,
+)
 
 
 def compute_bounds(
@@ -19,16 +33,14 @@ def compute_bounds(
     timer: Timer,
 ):
     lp, _, _, _, _, _, heur_cost = problem
-    
+
     # Solve relaxation to find LB
     # RAISES InfeasibleRelaxation
     before = perf_counter_ns()
     lb = lp_optimize_optimal(lp)
     after_lp = perf_counter_ns()
 
-    heur_tour, heur_ub = heuristic(
-            costs, heur_cost, best_solution, best_solution_cost
-        )
+    heur_tour, heur_ub = heuristic(costs, heur_cost, best_solution, best_solution_cost)
 
     after_heur = perf_counter_ns()
 
@@ -37,15 +49,35 @@ def compute_bounds(
     return lb, heur_ub, heur_tour, timer
 
 
-def bb_subproblem_pack(lp: LPModel, fixed_one: list[Edge], fixed_zero: list[Edge], branch_edge: int, is_upward: bool, branch_edge_val: float, heur_costs: HeurCosts) -> SubproblemState:
-    return lp, fixed_one, fixed_zero, branch_edge, is_upward, branch_edge_val, heur_costs
+def bb_subproblem_pack(
+    lp: LPModel,
+    fixed_one: list[Edge],
+    fixed_zero: list[Edge],
+    branch_edge: int,
+    is_upward: bool,
+    branch_edge_val: float,
+    heur_costs: HeurCosts,
+) -> SubproblemState:
+    return (
+        lp,
+        fixed_one,
+        fixed_zero,
+        branch_edge,
+        is_upward,
+        branch_edge_val,
+        heur_costs,
+    )
 
 
-def bb_intialize(costs: Costs, formulation=Formulation.CUTTING_PLANE) -> tuple[Subproblem, LPConstants]:
+def bb_intialize(
+    costs: Costs, formulation=Formulation.CUTTING_PLANE
+) -> tuple[Subproblem, LPConstants]:
     lp = lp_initialize(formulation, costs)
-    _, _ , c = lp
+    _, _, c = lp
 
-    return Subproblem(-1, bb_subproblem_pack(lp, [], [], -1, False, -1, copy_costs(costs))), c
+    return Subproblem(
+        -1, bb_subproblem_pack(lp, [], [], -1, False, -1, copy_costs(costs))
+    ), c
 
 
 def heuristic(
@@ -56,10 +88,10 @@ def heuristic(
 ) -> tuple[list[int], float]:
     n = len(costs)
     best_nbs = best_neighbors(heur_cost)
-    
+
     lkh_tour = lkh(best_solution, (n, heur_cost, best_nbs))
     lkh_cost = tour_cost(costs, lkh_tour)
-    
+
     return lkh_tour, lkh_cost
 
 
@@ -96,19 +128,18 @@ def do_branch_and_bound(inst: Costs):
     start_opt = perf_counter_ns()
     timer: Timer = (0, 0)
 
-
     while active_nodes:
         # Select an active node to process. We choose the one with the lowest lower bound (hopefully this will also
         # have a good upper bound, alllowing us to prune faster)
         problem = heappop(active_nodes)
 
-        lp, _, _, branch_edge, is_upward, branch_edge_value , _ = problem.state
+        lp, _, _, branch_edge, is_upward, branch_edge_value, _ = problem.state
 
         try:
             lb, ub, heur_tour, timer = compute_bounds(
                 inst, problem.state, best_solution, global_ub, timer
             )
-            
+
             if branch_edge != -1:
                 update_eta_sigma(
                     pseudo_plus,
@@ -135,9 +166,7 @@ def do_branch_and_bound(inst: Costs):
         # if it's greater than global ub we've already found an optimum and we're just making things worse
         if new_global_lb > global_lb and new_global_lb <= global_ub:
             global_lb = new_global_lb
-            print(
-                f"Improved lower bound. (lb={lb} glb={global_lb}, gub={global_ub})"
-            )
+            print(f"Improved lower bound. (lb={lb} glb={global_lb}, gub={global_ub})")
 
         # Prune by bound
         if lb > global_ub:
@@ -156,7 +185,6 @@ def do_branch_and_bound(inst: Costs):
             # we've found an integer solution that the heuristic couldn't find
             print(f"Integer LP solution...")
             if lb < global_ub:
-                
                 tour = tour_from_edge_values(edge_values, edges_by_index)
                 global_ub = lb
                 best_solution = tour
@@ -170,7 +198,6 @@ def do_branch_and_bound(inst: Costs):
         )
         heappush(active_nodes, problem_l)
         heappush(active_nodes, problem_r)
-
 
     assert global_ub >= global_lb
 

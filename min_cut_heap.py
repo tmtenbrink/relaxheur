@@ -1,12 +1,13 @@
-from numbers import Real
-from typing import cast
-import mip
-from tisp.graph import adjacency_matrix_from_vector, edge_idx
+from functools import total_ordering
+from heapq import heapify, heappop
+from random import random
+from time import perf_counter_ns
+import networkx
 
-from tisp.types import MergedVertex, EdgeValues, LPConstants, LPModel
+# graph is a list of lists
 
 
-EPSILON = 0.0000001
+MergedVertex = tuple[float, int, list[int]]
 
 
 def merge_vertex(base: MergedVertex, other: MergedVertex) -> MergedVertex:
@@ -157,7 +158,7 @@ def min_cut(weights: list[list[float]]):
     merged_weights = {i: {j: weights[i][j] for j in range(n)} for i in range(n)}
     active_bases = set(range(n))
 
-    min_cut_value = [[], []]
+    min_cut_value = None
     min_cut_weight = float("inf")
 
     while len(graph) > 1:
@@ -172,59 +173,63 @@ def min_cut(weights: list[list[float]]):
     return min_cut_weight, min_cut_value
 
 
-def compute_min_cut(x_values: list[float], n: int) -> tuple[float, list[int]]:
+EPSILON = 0.0000001
+
+
+def edge_idx(lower_i: int, higher_j: int, n: int):
+    """Returns the index of the edge using our edge-index convention."""
+    return lower_i * (2 * n - lower_i - 1) // 2 + (higher_j - lower_i - 1)
+
+
+def adjacency_matrix_from_vector(x_values: list[float], n: int) -> list[list[float]]:
+    """Create an adjacency matrix from x_values"""
+    if len(x_values) != (n * (n - 1)) // 2:
+        raise ValueError("x_values does not have the correct length")
+
+    weights: list[list[float]] = [[0 for j in range(n)] for i in range(n)]
+
+    for i in range(n):
+        for j in range(i + 1, n):
+            idx = edge_idx(i, j, n)
+            weights[i][j] = x_values[idx]
+            weights[j][i] = x_values[idx]
+
+    return weights
+
+
+def compute_min_cut(x_values: list[float], n: int):
     """Compute min cut using Stoer–Wagner algorithm. x_values should be 1D array with our edge
     index convention.
     """
     # we compute an adjacency matrix to more easily perform the stoer-wagner algorithm
-    graph = adjacency_matrix_from_vector(x_values, n)
-    min_cut_weight, cut = min_cut(graph)
+    weights = adjacency_matrix_from_vector(x_values, n)
+
+    # sw_min_cut, best_edge_list = sw_minimum_cut(graph)
     # we turn the list of edges back into array using our edge index convention
-    cut_edges = []
-    for n1 in cut[0]:
-        for n2 in cut[1]:
-            edge = edge_idx(n1, n2, n) if n1 < n2 else edge_idx(n2, n1, n)
-            cut_edges.append(edge)
+    # cut_edges = [edge_idx(e[0], e[1], n) for e in best_edge_list]
 
-    return min_cut_weight, cut_edges
+    time_b = perf_counter_ns()
+
+    new_sw_min_cut, new_sw_min_cut_verts = min_cut(weights)
+
+    time_c = perf_counter_ns()
+
+    # # print(sw_min_cut)
+    print(new_sw_min_cut)
+
+    # # print(best_edge_list)
+    print(new_sw_min_cut_verts)
+
+    print(f"Time {(time_c - time_b) / 1e6} ms")
+
+    # return min_cut, cut_edges
 
 
-def separation(
-    model: mip.Model, edge_values: EdgeValues, edge_vars: list[mip.Var], c: LPConstants
-) -> bool:
-    """Tests whether x is in P_subtour, if not it adds the violated inequality to the model.
-    1) The constraint >=0 is already defined in the char_vector.
-    2) We check if x(delta(v))=2, for all v, with some tolerance epsilon.
-    3) We check x(delta(U))>= 2, for all U, by finding the minimum cut and checking if it
-    is larger than 2 (with tolerance epsilon). Note that if the minimimum cut is larger
-    than 2, we know that all cuts are larger than 2.
+n = 200
+m_edges = n * (n - 1) // 2
 
-    It is easy to see that constraints 1 and 2 are checked in polynomial time. Constraint 3
-    has exponentially many inequalities (as there are exponentially many U), but can be checked
-    in polynomial time since the min-cut can be found in polynomial time by the Stoer-Wagner algorithm.
+x_vector = [random() * (0 if random() < 0.999 else 1) for _ in range(m_edges)]
+print(x_vector)
+# # print(x_vector)
 
-    Therefore, our separation algorithm is polynomial time.
-    """
-
-    n, _, vertex_edges, _, _ = c
-
-    for v in range(n):
-        # the columns are the vertices
-        edges = vertex_edges[v]
-        x_sum = 0
-        for e in edges:
-            x_sum += edge_values[e]
-
-        if abs(x_sum - 2) > EPSILON:
-            constr_vars = dict([(edge_vars[e], cast(Real, 1.0)) for e in edges])
-            model += mip.LinExpr(expr=constr_vars) == 2, f"x(delta({v}))==2"
-            return False
-
-    cut_weight, min_cut_edges = compute_min_cut(edge_values, n)
-    if cut_weight < 2 - EPSILON:
-        subtour_vars = dict([(edge_vars[e], cast(Real, 1.0)) for e in min_cut_edges])
-        model += mip.LinExpr(expr=subtour_vars) >= cast(Real, 2.0), f"x(delta(cut)>=2"
-
-        return False
-
-    return True
+compute_min_cut(x_vector, n)

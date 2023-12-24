@@ -1,8 +1,10 @@
 class TISPError(Exception):
     pass
 
+
 class NotOptimalError(TISPError):
     pass
+
 
 class UndefinedVariableError(TISPError):
     pass

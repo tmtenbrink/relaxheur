@@ -1,4 +1,3 @@
-
 from numbers import Real
 from time import perf_counter_ns
 from typing import Literal, cast
@@ -7,7 +6,15 @@ import mip
 from relax_bb import EdgeCosts
 from tisp.error import UndefinedVariableError
 from tisp.graph import edge_idxs_for_all_v, get_edges_by_index
-from tisp.types import Costs, EdgeValues, EdgesByIndex, Formulation, LPConstants, LPModel, VertexEdges
+from tisp.types import (
+    Costs,
+    EdgeValues,
+    EdgesByIndex,
+    Formulation,
+    LPConstants,
+    LPModel,
+    VertexEdges,
+)
 
 
 def compute_edge_costs(costs: Costs) -> EdgeCosts:
@@ -24,10 +31,14 @@ def compute_edge_costs(costs: Costs) -> EdgeCosts:
     return edge_costs
 
 
-
-def lp_pack_const(n: int, m_edges: int, vertex_edges: VertexEdges, edge_costs: EdgeCosts, edges_by_index: EdgesByIndex) -> LPConstants:
+def lp_pack_const(
+    n: int,
+    m_edges: int,
+    vertex_edges: VertexEdges,
+    edge_costs: EdgeCosts,
+    edges_by_index: EdgesByIndex,
+) -> LPConstants:
     return n, m_edges, vertex_edges, edge_costs, edges_by_index
-
 
 
 def cutting_plane_model(m_edges: int, edge_costs: EdgeCosts):
@@ -39,14 +50,21 @@ def cutting_plane_model(m_edges: int, edge_costs: EdgeCosts):
     print("Setting up cutting plane model...")
     start_build = perf_counter_ns()
 
-    z_expr = dict([(model.add_var(lb=cast(Real, 0.0), ub=cast(Real, 1.0), name=f"edge_{e}"), cast(Real, edge_costs[e])) for e in range(m_edges)])
+    z_expr = dict(
+        [
+            (
+                model.add_var(lb=cast(Real, 0.0), ub=cast(Real, 1.0), name=f"edge_{e}"),
+                cast(Real, edge_costs[e]),
+            )
+            for e in range(m_edges)
+        ]
+    )
     z = mip.LinExpr(expr=z_expr)
     model.objective = mip.minimize(z)
 
     build_time = (perf_counter_ns() - start_build) / 1e9
     print(f"Took {build_time} s.")
     return model
-
 
 
 def lp_initialize(formulation: Formulation, costs: Costs) -> LPModel:
@@ -77,7 +95,7 @@ def lp_copy_fix(lp: LPModel, edge_idx: int, fix_val: Literal[0, 1]) -> LPModel:
     copy_model, formulation, c = lp_copy(lp)
     edge_var = copy_model.var_by_name("edge_" + str(edge_idx))
     copy_model += edge_var == fix_val, f"x_{edge_idx}=={fix_val}"
-    
+
     return copy_model, formulation, c
 
 
@@ -94,8 +112,4 @@ def lp_edges(lp: LPModel) -> tuple[EdgeValues, list[mip.Var]]:
         edge_values.append(float(v_x))
         edge_vars.append(v)
 
-
     return edge_values, edge_vars
-
-
-

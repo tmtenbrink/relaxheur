@@ -13,19 +13,20 @@ def get_path(inst_path: str):
 
     if base_path.exists():
         return base_path
-    
+
     from_res_path = res_path.joinpath(inst_path)
-    
+
     if from_res_path.exists():
         return from_res_path
-    
+
     from_res_path_tsp = res_path.joinpath("tsp").joinpath(inst_path)
 
-    
     if from_res_path_tsp.exists():
         return from_res_path_tsp
-    
-    raise FileNotFoundError(f"Could not find instance path. Looked at path {inst_path}, {from_res_path} and {from_res_path_tsp}")
+
+    raise FileNotFoundError(
+        f"Could not find instance path. Looked at path {inst_path}, {from_res_path} and {from_res_path_tsp}"
+    )
 
 
 def get_inst(inst_path: str) -> tuple[Costs, str]:
@@ -48,4 +49,3 @@ def parse_as_adj_matrix(lines: list[str]) -> Costs:
     cost_adj_matrix = list(map(lambda ln: parse_line(ln), lines[1:]))
 
     return cost_adj_matrix
-

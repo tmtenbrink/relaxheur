@@ -1,10 +1,10 @@
-
 import math
 from typing import Literal, Optional
 from tisp.heuristic.compute import heur_fix
 from tisp.lp.model import lp_copy_fix
 
 from tisp.types import Edge, EdgeValues, PseudoList, Subproblem, SubproblemState
+
 
 def compute_pseudoscore(
     index_j: int, sigma_j: list[float], eta_j: list[float], initialized_j: list[int]
@@ -92,7 +92,11 @@ def update_eta_sigma(
 
 
 def branch_variable(
-    problem: SubproblemState, edge: Edge, e_idx: int, branch_e_val: float, parent_lb: float
+    problem: SubproblemState,
+    edge: Edge,
+    e_idx: int,
+    branch_e_val: float,
+    parent_lb: float,
 ):
     lp, fixed_one, fixed_zero, _, _, _, heur_costs = problem
 
@@ -115,7 +119,7 @@ def branch_variable(
             True,
             branch_e_val,
             heur_costs_l,
-        )
+        ),
     )
     problem_r = Subproblem(
         parent_lb,
@@ -127,7 +131,7 @@ def branch_variable(
             False,
             branch_e_val,
             heur_costs_r,
-        )
+        ),
     )
 
     return problem_l, problem_r
@@ -140,7 +144,6 @@ def find_branch_variable(
     pseudo_min: PseudoList,
     method: Literal["pseudocost", "first-non-integer"] = "pseudocost",
 ) -> Optional[tuple[Edge, int, float]]:
-    
     if method == "first-non-integer":
         for e_idx, e_val in enumerate(edge_values):
             epsilon = 0.0000001

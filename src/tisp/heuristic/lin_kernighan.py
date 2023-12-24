@@ -6,8 +6,6 @@ from tisp.tour import normalize_tour
 from tisp.types import HeurConstants, Edge, HeurConstants, Tour
 
 
-
-
 def random_tour(n: int) -> list[int]:
     return shuffle_normalized(list(range(n)))
 
@@ -43,7 +41,6 @@ def shuffle_normalized(tour: Tour) -> list[int]:
 #     bytes_per_n = (max_size.bit_length() + 7) // 8
 
 #     return reduce(lambda b, t: b + t.to_bytes(bytes_per_n, byteorder="big"), tour, b"")
-
 
 
 def tour_succ_i(tour: Tour, node_i: int):
@@ -179,9 +176,6 @@ def select_x(
 
 
 YResult = Optional[tuple[float, int, int, int, int, set[Edge], set[Edge]]]
-
-
-
 
 
 def select_y(
@@ -383,6 +377,3 @@ def best_move(
                 return maybe_tour, gain
 
     return None
-
-
-

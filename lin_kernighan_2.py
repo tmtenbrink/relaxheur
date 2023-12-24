@@ -42,7 +42,6 @@ def shuffle_normalized(tour: Tour) -> list[int]:
 #     return reduce(lambda b, t: b + t.to_bytes(bytes_per_n, byteorder="big"), tour, b"")
 
 
-
 def tour_succ_i(tour: Tour, node_i: int):
     if node_i == len(tour) - 1:
         return tour[0], 0

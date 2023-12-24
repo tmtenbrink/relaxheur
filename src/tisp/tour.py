@@ -12,7 +12,6 @@ def normalize_tour(tour: list[int]) -> Tour:
         return [0] + normalized_tour
     else:
         return [0] + list(reversed(normalized_tour))
-    
 
 
 def tour_from_edge_values(edge_values: EdgeValues, edges_by_index: EdgesByIndex):

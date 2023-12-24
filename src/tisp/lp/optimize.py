@@ -14,7 +14,7 @@ def cut_lp_optimize(m: mip.Model):
 def cut_relax_optimize(lp: LPModel) -> mip.Model:
     """RAISES InfeasibleRelaxation when unable to optimize."""
     m, _, c = lp
-    
+
     invalid = True
 
     while invalid:
@@ -42,14 +42,12 @@ def lp_optimize_optimal(lp: LPModel, show_time=False) -> float:
     else:
         model.optimize()
 
-    
     model_obj = model.objective_value
     if model.status != mip.OptimizationStatus.OPTIMAL or model_obj is None:
         raise NotOptimalError()
-    
+
     opt_time = (perf_counter_ns() - start_opt) / 1e9
     if show_time:
         print(f"Took {opt_time} s.")
 
-    
     return float(model_obj)
