@@ -3,11 +3,11 @@ from time import perf_counter_ns
 from typing import Literal, cast
 import mip
 
-from relax_bb import EdgeCosts
 from tisp.error import UndefinedVariableError
 from tisp.graph import edge_idxs_for_all_v, get_edges_by_index
 from tisp.types import (
     Costs,
+    EdgeCosts,
     EdgeValues,
     EdgesByIndex,
     Formulation,

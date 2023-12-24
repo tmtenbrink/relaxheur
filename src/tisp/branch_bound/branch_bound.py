@@ -8,6 +8,7 @@ from tisp.branch_bound.branching import (
 from tisp.error import InfeasibleRelaxation
 from tisp.graph import best_neighbors, copy_costs
 from tisp.heuristic.compute import lkh
+from tisp.heuristic.lin_kernighan import shuffle_iter, shuffle_normalized
 from tisp.lp.model import lp_edges, lp_initialize
 from tisp.lp.optimize import lp_optimize_optimal
 from tisp.tour import tour_cost, tour_from_edge_values
@@ -32,7 +33,15 @@ def compute_bounds(
     best_solution_cost: float,
     timer: Timer,
 ):
-    lp, _, _, _, _, _, heur_cost = problem
+    lp, fixed_1, fixed_2, _, _, _, heur_cost = problem
+
+    heur_amount = 1
+    shuffle_heur = False
+
+    if len(fixed_1) == 0 and len(fixed_2) == 0:
+        heur_amount = 100
+        shuffle_heur = True
+        print("Computing initial LP...")
 
     # Solve relaxation to find LB
     # RAISES InfeasibleRelaxation
@@ -40,7 +49,10 @@ def compute_bounds(
     lb = lp_optimize_optimal(lp)
     after_lp = perf_counter_ns()
 
-    heur_tour, heur_ub = heuristic(costs, heur_cost, best_solution, best_solution_cost)
+    if shuffle_heur:
+        print("Computing initial heuristic tours...")
+
+    heur_tour, heur_ub = heuristic(costs, heur_cost, best_solution, best_solution_cost, heur_amount, shuffle_heur)
 
     after_heur = perf_counter_ns()
 
@@ -84,15 +96,30 @@ def heuristic(
     costs: Costs,
     heur_cost: HeurCosts,
     best_solution: list[int],
-    best_sol_cost: float,
+    best_solution_cost: float,
+    number_heur: int = 1,
+    shuffle_tour: bool = False
 ) -> tuple[list[int], float]:
     n = len(costs)
     best_nbs = best_neighbors(heur_cost)
 
-    lkh_tour = lkh(best_solution, (n, heur_cost, best_nbs))
-    lkh_cost = tour_cost(costs, lkh_tour)
+    best_heur_tour = best_solution
+    best_cost = best_solution_cost
 
-    return lkh_tour, lkh_cost
+    for _ in range(number_heur):
+        if shuffle_tour:
+            start_tour = shuffle_normalized(best_solution)
+        else:
+            start_tour = best_solution
+
+        lkh_tour = lkh(start_tour, (n, heur_cost, best_nbs))
+        lkh_cost = tour_cost(costs, lkh_tour)
+
+        if lkh_cost < best_cost:
+            best_heur_tour = lkh_tour
+            best_cost = lkh_cost
+
+    return best_heur_tour, best_cost
 
 
 def initial_ub(inst: Costs) -> float:
@@ -112,9 +139,7 @@ def do_branch_and_bound(inst: Costs):
     base_tour = list(range(n))
     base_cost = tour_cost(inst, base_tour)
 
-    best_solution, global_ub = heuristic(
-        inst, global_problem.state[6], base_tour, base_cost
-    )
+    best_solution, global_ub = base_tour, base_cost
 
     pseudo_plus = ([0.0] * m_edges, [0.0] * m_edges, list[int]())
     pseudo_min = ([0.0] * m_edges, [0.0] * m_edges, list[int]())
@@ -205,7 +230,7 @@ def do_branch_and_bound(inst: Costs):
     print(f"\t- integer optimal: {tour_cost(inst, best_solution)}")
     print(f"\t- optimal tour: {best_solution}")
     timer_times = (
-        f"({timer[0]/1e9} s solving LP's. {timer[1]/1e9} s computing heuristics.)"
+        f"({timer[0]/1e9} s solving LP's (excl. external solver). {timer[1]/1e9} s computing heuristics.)"
     )
     print(
         f"Optimizing using B&B with cutting plane relaxation and Lin-Kernighan took {opt_time} s. {timer_times}"

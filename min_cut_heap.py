@@ -62,38 +62,41 @@ def create_phase_list(
     phase_list: list[MergedVertex],
     merged_weights: dict[int, dict[int, float]],
 ):
-    next_vertex_idx = 0
 
     # print(f"starting phase with graph {graph}")
     # print(f"merged weights are {merged_weights}")
 
-    while len(graph) > 2:
-        next_vertex = graph.pop(next_vertex_idx)
+    graph_len = len(graph)
+
+    for graph_index in range(graph_len-2):
+        next_vertex = graph[graph_index]
         phase_list.append(next_vertex)
         # print(f"next vertex is {next_vertex}")
-        # print(f"remaining graph is {graph}")
+        # print(f"remaining graph is {graph[graph_index+1:]}")
 
         added_vertex_weights = merged_weights[next_vertex[1]]
         # print(f"weights of next vertex is {added_vertex_weights}")
 
-        highest_wght = 0
+        highest_wght = -1
         next_vertex_idx = 0
         # # print(graph)
-        i = 0
-        for prev_value, base, inner_verts in graph:
+        for g_i in range(graph_index+1, graph_len):
+            prev_value, base, inner_verts = graph[g_i]
             # print(f"updating remaining vertex {base}")
             ph_lst_weight = new_phase_list_weight(
                 prev_value, base, added_vertex_weights
             )
-            graph[i] = (ph_lst_weight, base, inner_verts)
+            graph[g_i] = (ph_lst_weight, base, inner_verts)
 
             if ph_lst_weight > highest_wght:
-                next_vertex_idx = i
+                next_vertex_idx = g_i
                 highest_wght = ph_lst_weight
 
-            i += 1
 
-    return graph, phase_list, next_vertex_idx
+        graph[graph_index+1], graph[next_vertex_idx] = graph[next_vertex_idx], graph[graph_index+1]
+        # print(f"updated graph is {graph[graph_index+1:]}")
+
+    return graph, phase_list
 
 
 def reset_phase_weights(graph: list[MergedVertex]) -> list[MergedVertex]:
@@ -107,16 +110,16 @@ def min_cut_phase(
 ):
     phase_list: list[MergedVertex] = []
 
-    graph, phase_list, penultimate_idx = create_phase_list(
+    graph, phase_list = create_phase_list(
         graph, phase_list, merged_weights
     )
 
     # print(f"remaining graph after phase list: {graph}")
     # now two vertices are left, which we will merge
     # first get second to last
-    second_to_last_vertex = graph.pop(penultimate_idx)
+    second_to_last_vertex = graph[-2]
     # get the final one
-    final_vertex = graph.pop()
+    final_vertex = graph[-1]
     # SOMETHING WRONG WITH WHICH ONES ARE MERGED
     # print(f"second_to_last: {second_to_last_vertex}; final: {final_vertex}")
 
@@ -218,18 +221,18 @@ def compute_min_cut(x_values: list[float], n: int):
     print(new_sw_min_cut)
 
     # # print(best_edge_list)
-    print(new_sw_min_cut_verts)
+    # print(new_sw_min_cut_verts)
 
     print(f"Time {(time_c - time_b) / 1e6} ms")
 
     # return min_cut, cut_edges
 
 
-n = 200
+n = 500
 m_edges = n * (n - 1) // 2
 
-x_vector = [random() * (0 if random() < 0.999 else 1) for _ in range(m_edges)]
-print(x_vector)
+x_vector = [round(random(), 1) * (0 if random() < 0.99 else 1) for _ in range(m_edges)]
+# print(x_vector)
 # # print(x_vector)
 
 compute_min_cut(x_vector, n)

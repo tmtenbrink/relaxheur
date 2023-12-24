@@ -63,24 +63,18 @@ def create_phase_list(
 ):
     next_vertex_idx = 0
 
-    # print(f"starting phase with graph {graph}")
-    # print(f"merged weights are {merged_weights}")
-
     while len(graph) > 2:
         next_vertex = graph.pop(next_vertex_idx)
         phase_list.append(next_vertex)
-        # print(f"next vertex is {next_vertex}")
-        # print(f"remaining graph is {graph}")
 
         added_vertex_weights = merged_weights[next_vertex[1]]
-        # print(f"weights of next vertex is {added_vertex_weights}")
 
         highest_wght = 0
         next_vertex_idx = 0
-        # # print(graph)
+
         i = 0
         for prev_value, base, inner_verts in graph:
-            # print(f"updating remaining vertex {base}")
+
             ph_lst_weight = new_phase_list_weight(
                 prev_value, base, added_vertex_weights
             )
@@ -110,16 +104,10 @@ def min_cut_phase(
         graph, phase_list, merged_weights
     )
 
-    # print(f"remaining graph after phase list: {graph}")
-    # now two vertices are left, which we will merge
-    # first get second to last
     second_to_last_vertex = graph.pop(penultimate_idx)
-    # get the final one
-    final_vertex = graph.pop()
-    # SOMETHING WRONG WITH WHICH ONES ARE MERGED
-    # print(f"second_to_last: {second_to_last_vertex}; final: {final_vertex}")
 
-    # update the final vertex, which will be the weight of the cut
+    final_vertex = graph.pop()
+
     penultimate_base = second_to_last_vertex[1]
 
     cut_first_part = create_first_cut(phase_list, second_to_last_vertex)
@@ -129,18 +117,11 @@ def min_cut_phase(
         final_vertex[0], final_vertex[1], merged_weights[penultimate_base]
     )
 
-    # merge the vertices
     final_vertex = merge_vertex(final_vertex, second_to_last_vertex)
 
-    # print(f"merging vertices {penultimate_base} and {final_vertex[1]}")
-
-    # uppdate the weights with the merged vertex
-    # print(f"weights before merging: {merged_weights}")
-    # print(f"active bases: {active_bases}")
     merged_weights, active_bases = update_merged_weights(
         merged_weights, final_vertex[1], penultimate_base, active_bases
     )
-    # print(f"active bases after update: {active_bases}")
 
     return (
         reset_phase_weights(phase_list) + [final_vertex],
@@ -179,7 +160,7 @@ def compute_min_cut(x_values: list[float], n: int) -> tuple[float, list[int]]:
     # we compute an adjacency matrix to more easily perform the stoer-wagner algorithm
     graph = adjacency_matrix_from_vector(x_values, n)
     min_cut_weight, cut = min_cut(graph)
-    # we turn the list of edges back into array using our edge index convention
+
     cut_edges = []
     for n1 in cut[0]:
         for n2 in cut[1]:
