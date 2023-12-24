@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "tisp"
-version = "0.1.0"
+version = "0.1.1"
 description = "Solve TSP instances to optimality."
 authors = ["Tip ten Brink <T.M.tenBrink@student.tudelft.nl>", "Jasper Mulder <J.Mulder-7@student.tudelft.nl>"]
 readme = "README.md"
