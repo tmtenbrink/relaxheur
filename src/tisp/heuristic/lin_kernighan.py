@@ -1,9 +1,8 @@
 import random
 from typing import Iterable, Optional
-from functools import reduce
 from tisp.tour import normalize_tour
 
-from tisp.types import HeurConstants, Edge, HeurConstants, Tour
+from tisp.types import HeurConstants, Edge, Tour
 
 
 def random_tour(n: int) -> list[int]:
@@ -13,7 +12,7 @@ def random_tour(n: int) -> list[int]:
 def shuffle_iter(itrble: Iterable[int]) -> list[int]:
     """Returns a shuffled copy of the iterable as a list."""
     randoms = [(random.random(), i) for i in itrble]
-    randoms.sort(key=lambda l: l[0])
+    randoms.sort(key=lambda l_el: l_el[0])
     shuffled = list(map(lambda r: r[1], randoms))
     return shuffled
 

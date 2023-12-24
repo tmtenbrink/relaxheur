@@ -1,5 +1,5 @@
 from heapq import heapify, heappop, heappush
-from time import perf_counter_ns
+from time import perf_counter_ns, time_ns
 from tisp.branch_bound.branching import (
     branch_variable,
     find_branch_variable,
@@ -8,7 +8,7 @@ from tisp.branch_bound.branching import (
 from tisp.error import InfeasibleRelaxation
 from tisp.graph import best_neighbors, copy_costs
 from tisp.heuristic.compute import lkh
-from tisp.heuristic.lin_kernighan import shuffle_iter, shuffle_normalized
+from tisp.heuristic.lin_kernighan import shuffle_normalized
 from tisp.lp.model import lp_edges, lp_initialize
 from tisp.lp.optimize import lp_optimize_optimal
 from tisp.tour import tour_cost, tour_from_edge_values
@@ -52,7 +52,9 @@ def compute_bounds(
     if shuffle_heur:
         print("Computing initial heuristic tours...")
 
-    heur_tour, heur_ub = heuristic(costs, heur_cost, best_solution, best_solution_cost, heur_amount, shuffle_heur)
+    heur_tour, heur_ub = heuristic(
+        costs, heur_cost, best_solution, best_solution_cost, heur_amount, shuffle_heur
+    )
 
     after_heur = perf_counter_ns()
 
@@ -98,7 +100,7 @@ def heuristic(
     best_solution: list[int],
     best_solution_cost: float,
     number_heur: int = 1,
-    shuffle_tour: bool = False
+    shuffle_tour: bool = False,
 ) -> tuple[list[int], float]:
     n = len(costs)
     best_nbs = best_neighbors(heur_cost)
@@ -150,7 +152,7 @@ def do_branch_and_bound(inst: Costs):
     # this is best-first search
     heapify(active_nodes)
 
-    start_opt = perf_counter_ns()
+    start_opt = time_ns()
     timer: Timer = (0, 0)
 
     while active_nodes:
@@ -208,7 +210,7 @@ def do_branch_and_bound(inst: Costs):
         )
         if branch_var_res is None:
             # we've found an integer solution that the heuristic couldn't find
-            print(f"Integer LP solution...")
+            print("Integer LP solution...")
             if lb < global_ub:
                 tour = tour_from_edge_values(edge_values, edges_by_index)
                 global_ub = lb
@@ -226,12 +228,10 @@ def do_branch_and_bound(inst: Costs):
 
     assert global_ub >= global_lb
 
-    opt_time = (perf_counter_ns() - start_opt) / 1e9
+    opt_time = (time_ns() - start_opt) / 1e9
     print(f"\t- integer optimal: {tour_cost(inst, best_solution)}")
     print(f"\t- optimal tour: {best_solution}")
-    timer_times = (
-        f"({timer[0]/1e9} s solving LP's (excl. external solver). {timer[1]/1e9} s computing heuristics.)"
-    )
+    timer_times = f"({timer[0]/1e9} s solving LP's (excl. external solver). {timer[1]/1e9} s computing heuristics.)"
     print(
         f"Optimizing using B&B with cutting plane relaxation and Lin-Kernighan took {opt_time} s. {timer_times}"
     )

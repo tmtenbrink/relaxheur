@@ -3,7 +3,7 @@ from typing import cast
 import mip
 from tisp.graph import adjacency_matrix_from_vector, edge_idx
 
-from tisp.types import MergedVertex, EdgeValues, LPConstants, LPModel
+from tisp.types import MergedVertex, EdgeValues, LPConstants
 
 
 EPSILON = 0.0000001
@@ -74,7 +74,6 @@ def create_phase_list(
 
         i = 0
         for prev_value, base, inner_verts in graph:
-
             ph_lst_weight = new_phase_list_weight(
                 prev_value, base, added_vertex_weights
             )
@@ -204,7 +203,7 @@ def separation(
     cut_weight, min_cut_edges = compute_min_cut(edge_values, n)
     if cut_weight < 2 - EPSILON:
         subtour_vars = dict([(edge_vars[e], cast(Real, 1.0)) for e in min_cut_edges])
-        model += mip.LinExpr(expr=subtour_vars) >= cast(Real, 2.0), f"x(delta(cut)>=2"
+        model += mip.LinExpr(expr=subtour_vars) >= cast(Real, 2.0), "x(delta(cut)>=2"
 
         return False
 

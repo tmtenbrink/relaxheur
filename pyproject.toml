@@ -1,16 +1,15 @@
 [tool.poetry]
-name = "relaxheur"
+name = "tisp"
 version = "0.1.0"
-description = ""
-authors = ["tmtenbrink <T.M.tenBrink@student.tudelft.nl>"]
+description = "Solve TSP instances to optimality."
+authors = ["Tip ten Brink <T.M.tenBrink@student.tudelft.nl>", "Jasper Mulder <J.Mulder-7@student.tudelft.nl>"]
 readme = "README.md"
 packages = [
     { include = "tisp", from = "src" },
 ]
 
 [tool.poetry.dependencies]
-python = ">=3.9, <3.10"
-gurobipy = "^10.0.3"
+python = ">=3.9, <3.12"
 mip = "^1.15.0"
 
 [tool.poetry.scripts]
@@ -18,8 +17,6 @@ tisp = "tisp.solver:run"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.1.8"
-gurobipy-stubs = "^2.0.0"
-networkx = "^3.2"
 
 [build-system]
 requires = ["poetry-core"]

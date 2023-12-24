@@ -1,0 +1,51 @@
+name: CI
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  release:
+    types: [ published ]
+
+jobs:
+  buildtest:
+    name: Build-Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pipx install poetry==1.7.1
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'poetry'
+      - run: poetry install
+      - name: Build
+        run: poetry build
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: dist
+          path: ${{ github.workspace }}/dist/
+          if-no-files-found: error
+  publish:
+    needs: [buildtest]
+    name: Wheel-Publish
+    runs-on: ubuntu-latest
+    steps:
+    - name: Download artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: dist
+        path: ${{ github.workspace }}/dist/
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    - name: Install wheel test
+      run: |
+        pip install ${{ github.workspace }}/dist/*.whl
+    - name: Publish a Python distribution to PyPI
+      if: ${{ github.event_name == 'release' && github.event.action == 'published' }}
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        user: __token__
+        password: ${{ secrets.PYPI_API_TOKEN }}
